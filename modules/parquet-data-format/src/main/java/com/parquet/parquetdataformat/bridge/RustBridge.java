@@ -34,6 +34,7 @@ public class RustBridge {
     static {
         try {
             loadNativeLibrary();
+            Runtime.getRuntime().addShutdownHook(new Thread(RustBridge::cleanup));
         } catch (Exception e) {
             throw new RuntimeException("Failed to load native Rust library", e);
         }
@@ -77,6 +78,8 @@ public class RustBridge {
             throw new RuntimeException("Failed to load native library from resources", e);
         }
     }
+
+    private static native void cleanup();
 
     // Enhanced native methods that handle validation and provide better error reporting
     public static native void createWriter(String file, long schemaAddress) throws IOException;

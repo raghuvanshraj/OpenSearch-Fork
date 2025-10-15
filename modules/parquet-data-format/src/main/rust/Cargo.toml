@@ -58,6 +58,15 @@ lazy_static = "1.4.0"
 dashmap = "7.0.0-rc2"
 chrono = "0.4"
 
+dhat = "0.3"
+
+[profile.release]
+debug = 1  # Enable debug symbols for better stack traces
+
+[features]
+dhat-heap = []      # Feature flag for heap profiling
+dhat-ad-hoc = []    # Feature flag for ad hoc profiling
+
 
 [build-dependencies]
 cbindgen = "0.27"
