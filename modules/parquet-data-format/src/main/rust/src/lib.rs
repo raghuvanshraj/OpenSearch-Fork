@@ -1,5 +1,5 @@
-use jni::objects::{JClass, JString};
-use jni::sys::{jint, jlong};
+use jni::objects::{JClass, JString, JObject};
+use jni::sys::{jint, jlong, jobject};
 use jni::JNIEnv;
 use dashmap::DashMap;
 use arrow::record_batch::RecordBatch;
@@ -13,6 +13,7 @@ use std::io::Write;
 use chrono::Utc;
 use parquet::basic::{Compression, ZstdLevel};
 use parquet::file::properties::WriterProperties;
+use parquet::format::FileMetaData;
 
 pub mod parquet_merge;
 pub use parquet_merge::*;
@@ -125,7 +126,7 @@ impl NativeParquetWriter {
         }
     }
 
-    fn close_writer(filename: String) -> Result<(), Box<dyn std::error::Error>> {
+    fn close_writer(filename: String) -> Result<Option<FileMetaData>, Box<dyn std::error::Error>> {
         let log_msg = format!("[RUST] close_writer called for file: {}\n", filename);
         println!("{}", log_msg.trim());
         Self::log_to_file(&log_msg);
@@ -133,13 +134,14 @@ impl NativeParquetWriter {
         if let Some((_, writer_arc)) = WRITER_MANAGER.remove(&filename) {
             match Arc::try_unwrap(writer_arc) {
                 Ok(mutex) => {
-                    let mut writer = mutex.into_inner().unwrap();
+                    let writer = mutex.into_inner().unwrap();
                     match writer.close() {
-                        Ok(_) => {
-                            let success_msg = format!("[RUST] Successfully closed writer for file: {}\n", filename);
+                        Ok(file_metadata) => {
+                            let success_msg = format!("[RUST] Successfully closed writer for file: {}, metadata: version={}, num_rows={}\n", 
+                                filename, file_metadata.version, file_metadata.num_rows);
                             println!("{}", success_msg.trim());
                             Self::log_to_file(&success_msg);
-                            Ok(())
+                            Ok(Some(file_metadata))
                         }
                         Err(e) => {
                             let error_msg = format!("[RUST] ERROR: Failed to close writer for file: {}\n", filename);
@@ -157,7 +159,8 @@ impl NativeParquetWriter {
                 }
             }
         } else {
-            Ok(())
+            // No writer found, return None but not an error
+            Ok(None)
         }
     }
 
@@ -166,7 +169,7 @@ impl NativeParquetWriter {
         println!("{}", log_msg.trim());
         Self::log_to_file(&log_msg);
 
-        if let Some(mut file) = FILE_MANAGER.get_mut(&filename) {
+        if let Some(file) = FILE_MANAGER.get_mut(&filename) {
             match file.sync_all() {
                 Ok(_) => {
                     let success_msg = format!("[RUST] Successfully fsynced file: {}\n", filename);
@@ -198,6 +201,26 @@ impl NativeParquetWriter {
             let timestamped_message = format!("[{}] {}", timestamp, message);
             let _ = file.write_all(timestamped_message.as_bytes());
         }
+    }
+
+    fn create_java_metadata<'local>(env: &mut JNIEnv<'local>, metadata: &FileMetaData) -> Result<JObject<'local>, Box<dyn std::error::Error>> {
+        // Find the ParquetFileMetadata class
+        let class = env.find_class("com/parquet/parquetdataformat/bridge/ParquetFileMetadata")?;
+        
+        // Create Java String for created_by (handle None case)
+        let created_by_jstring = match &metadata.created_by {
+            Some(created_by) => env.new_string(created_by)?,
+            None => JObject::null().into(),
+        };
+        
+        // Create the Java object using new_object with signature
+        let java_metadata = env.new_object(&class, "(IJLjava/lang/String;)V", &[
+            (metadata.version).into(),
+            (metadata.num_rows).into(),
+            (&created_by_jstring).into(),
+        ])?;
+        
+        Ok(java_metadata)
     }
 }
 
@@ -235,11 +258,39 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_clos
     mut env: JNIEnv,
     _class: JClass,
     file: JString
-) -> jint {
+) -> jobject {
     let filename: String = env.get_string(&file).expect("Couldn't get java string!").into();
     match NativeParquetWriter::close_writer(filename) {
-        Ok(_) => 0,
-        Err(_) => -1,
+        Ok(maybe_metadata) => {
+            match maybe_metadata {
+                Some(metadata) => {
+                    match NativeParquetWriter::create_java_metadata(&mut env, &metadata) {
+                        Ok(java_obj) => java_obj.into_raw(),
+                        Err(e) => {
+                            let error_msg = format!("[RUST] ERROR: Failed to create Java metadata object: {:?}\n", e);
+                            println!("{}", error_msg.trim());
+                            NativeParquetWriter::log_to_file(&error_msg);
+                            // Throw IOException to Java
+                            let _ = env.throw_new("java/io/IOException", "Failed to create metadata object");
+                            JObject::null().into_raw()
+                        }
+                    }
+                }
+                None => {
+                    // No writer was found, but this is not necessarily an error
+                    // Return null to indicate no metadata available
+                    JObject::null().into_raw()
+                }
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("[RUST] ERROR: Failed to close writer: {:?}\n", e);
+            println!("{}", error_msg.trim());
+            NativeParquetWriter::log_to_file(&error_msg);
+            // Throw IOException to Java
+            let _ = env.throw_new("java/io/IOException", &format!("Failed to close writer: {}", e));
+            JObject::null().into_raw()
+        }
     }
 }
 

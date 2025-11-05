@@ -9,6 +9,7 @@
 package com.parquet.parquetdataformat.vsr;
 
 import com.parquet.parquetdataformat.bridge.ArrowExport;
+import com.parquet.parquetdataformat.bridge.ParquetFileMetadata;
 import com.parquet.parquetdataformat.bridge.RustBridge;
 import com.parquet.parquetdataformat.memory.MemoryPressureMonitor;
 import com.parquet.parquetdataformat.writer.ParquetDocumentInput;
@@ -127,7 +128,8 @@ public class VSRManager {
             // Direct native call - write the managed VSR data
             try (ArrowExport export = managedVSR.exportToArrow()) {
                 RustBridge.write(fileName, export.getArrayAddress(), export.getSchemaAddress());
-                RustBridge.closeWriter(fileName);
+                ParquetFileMetadata fileMetadata = RustBridge.closeWriter(fileName);
+                System.out.println(fileMetadata);
             }
             System.out.println("[JAVA] Successfully flushed data");
 
