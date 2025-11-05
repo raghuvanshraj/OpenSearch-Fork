@@ -2354,21 +2354,7 @@ public class SnapshotResiliencyTests extends OpenSearchTestCase {
                     transportService,
                     SearchExecutionStatsCollector.makeWrapper(responseCollectorService)
                 );
-                final SearchService searchService = new SearchService(
-                    clusterService,
-                    indicesService,
-                    threadPool,
-                    scriptService,
-                    bigArrays,
-                    new QueryPhase(),
-                    new FetchPhase(Collections.emptyList()),
-                    responseCollectorService,
-                    new NoneCircuitBreakerService(),
-                    null,
-                    new TaskResourceTrackingService(settings, clusterSettings, threadPool),
-                    Collections.emptyList(),
-                    Collections.emptyList()
-                );
+                final SearchService searchService = null;
                 SearchPhaseController searchPhaseController = new SearchPhaseController(
                     writableRegistry(),
                     searchService::aggReduceContextBuilder

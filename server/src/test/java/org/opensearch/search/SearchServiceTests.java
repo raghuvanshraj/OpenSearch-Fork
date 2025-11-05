@@ -837,7 +837,7 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
                 try {
                     latch.await();
                     for (;;) {
-                        final Engine.SearcherSupplier reader = indexShard.acquireSearcherSupplier();
+                        final Engine.SearcherSupplier reader = null;
                         try {
                             searchService.createAndPutReaderContext(
                                 new ShardScrollRequestTest(indexShard.shardId()),

@@ -13,7 +13,9 @@ use std::io::Write;
 use chrono::Utc;
 use parquet::basic::{Compression, ZstdLevel};
 use parquet::file::properties::WriterProperties;
-use parquet::format::FileMetaData;
+use parquet::format::FileMetaData as FormatFileMetaData;
+use parquet::file::metadata::FileMetaData as FileFileMetaData;
+use parquet::file::reader::{FileReader, SerializedFileReader};
 
 pub mod parquet_merge;
 pub use parquet_merge::*;
@@ -126,7 +128,7 @@ impl NativeParquetWriter {
         }
     }
 
-    fn close_writer(filename: String) -> Result<Option<FileMetaData>, Box<dyn std::error::Error>> {
+    fn close_writer(filename: String) -> Result<Option<FormatFileMetaData>, Box<dyn std::error::Error>> {
         let log_msg = format!("[RUST] close_writer called for file: {}\n", filename);
         println!("{}", log_msg.trim());
         Self::log_to_file(&log_msg);
@@ -192,6 +194,45 @@ impl NativeParquetWriter {
         }
     }
 
+    fn get_file_metadata(filename: String) -> Result<FileFileMetaData, Box<dyn std::error::Error>> {
+        let log_msg = format!("[RUST] get_file_metadata called for file: {}\n", filename);
+        println!("{}", log_msg.trim());
+        Self::log_to_file(&log_msg);
+
+        // Open the Parquet file
+        let file = match File::open(&filename) {
+            Ok(f) => f,
+            Err(e) => {
+                let error_msg = format!("[RUST] ERROR: Failed to open file {}: {:?}\n", filename, e);
+                println!("{}", error_msg.trim());
+                Self::log_to_file(&error_msg);
+                return Err(format!("File not found: {}", filename).into());
+            }
+        };
+
+        // Create SerializedFileReader
+        let reader = match SerializedFileReader::new(file) {
+            Ok(r) => r,
+            Err(e) => {
+                let error_msg = format!("[RUST] ERROR: Failed to create Parquet reader for {}: {:?}\n", filename, e);
+                println!("{}", error_msg.trim());
+                Self::log_to_file(&error_msg);
+                return Err(format!("Invalid Parquet file format: {}", e).into());
+            }
+        };
+
+        // Get metadata from the reader
+        let parquet_metadata = reader.metadata();
+        let file_metadata = parquet_metadata.file_metadata().clone();
+
+        let success_msg = format!("[RUST] Successfully read metadata from file: {}, version={}, num_rows={}\n", 
+            filename, file_metadata.version(), file_metadata.num_rows());
+        println!("{}", success_msg.trim());
+        Self::log_to_file(&success_msg);
+
+        Ok(file_metadata)
+    }
+
     fn log_to_file(message: &str) {
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
@@ -203,7 +244,7 @@ impl NativeParquetWriter {
         }
     }
 
-    fn create_java_metadata<'local>(env: &mut JNIEnv<'local>, metadata: &FileMetaData) -> Result<JObject<'local>, Box<dyn std::error::Error>> {
+    fn create_java_metadata<'local>(env: &mut JNIEnv<'local>, metadata: &FormatFileMetaData) -> Result<JObject<'local>, Box<dyn std::error::Error>> {
         // Find the ParquetFileMetadata class
         let class = env.find_class("com/parquet/parquetdataformat/bridge/ParquetFileMetadata")?;
         
@@ -217,6 +258,26 @@ impl NativeParquetWriter {
         let java_metadata = env.new_object(&class, "(IJLjava/lang/String;)V", &[
             (metadata.version).into(),
             (metadata.num_rows).into(),
+            (&created_by_jstring).into(),
+        ])?;
+        
+        Ok(java_metadata)
+    }
+
+    fn create_java_metadata_from_file<'local>(env: &mut JNIEnv<'local>, metadata: &FileFileMetaData) -> Result<JObject<'local>, Box<dyn std::error::Error>> {
+        // Find the ParquetFileMetadata class
+        let class = env.find_class("com/parquet/parquetdataformat/bridge/ParquetFileMetadata")?;
+        
+        // Create Java String for created_by (handle None case)
+        let created_by_jstring = match metadata.created_by() {
+            Some(created_by) => env.new_string(created_by)?,
+            None => JObject::null().into(),
+        };
+        
+        // Create the Java object using new_object with signature
+        let java_metadata = env.new_object(&class, "(IJLjava/lang/String;)V", &[
+            (metadata.version()).into(),
+            (metadata.num_rows()).into(),
             (&created_by_jstring).into(),
         ])?;
         
@@ -304,5 +365,37 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_flus
     match NativeParquetWriter::flush_to_disk(filename) {
         Ok(_) => 0,
         Err(_) => -1,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_getFileMetadata(
+    mut env: JNIEnv,
+    _class: JClass,
+    file: JString
+) -> jobject {
+    let filename: String = env.get_string(&file).expect("Couldn't get java string!").into();
+    match NativeParquetWriter::get_file_metadata(filename) {
+        Ok(metadata) => {
+            match NativeParquetWriter::create_java_metadata_from_file(&mut env, &metadata) {
+                Ok(java_obj) => java_obj.into_raw(),
+                Err(e) => {
+                    let error_msg = format!("[RUST] ERROR: Failed to create Java metadata object: {:?}\n", e);
+                    println!("{}", error_msg.trim());
+                    NativeParquetWriter::log_to_file(&error_msg);
+                    // Throw IOException to Java
+                    let _ = env.throw_new("java/io/IOException", "Failed to create metadata object");
+                    JObject::null().into_raw()
+                }
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("[RUST] ERROR: Failed to read file metadata: {:?}\n", e);
+            println!("{}", error_msg.trim());
+            NativeParquetWriter::log_to_file(&error_msg);
+            // Throw IOException to Java
+            let _ = env.throw_new("java/io/IOException", &format!("Failed to read file metadata: {}", e));
+            JObject::null().into_raw()
+        }
     }
 }
