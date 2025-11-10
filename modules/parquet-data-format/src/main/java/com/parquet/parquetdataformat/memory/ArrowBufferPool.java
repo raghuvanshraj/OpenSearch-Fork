@@ -28,7 +28,7 @@ public class ArrowBufferPool implements Closeable {
         long maxAllocationInBytes = getMaxAllocationInBytes(settings);
 
         logger.info("Max native memory allocation for ArrowBufferPool: {} bytes", maxAllocationInBytes);
-        this.rootAllocator = new RootAllocator(maxAllocationInBytes);
+        this.rootAllocator = new RootAllocator(new PoolAllocationListener(), maxAllocationInBytes);
         this.maxChildAllocation = maxAllocationInBytes;
     }
 
@@ -50,7 +50,7 @@ public class ArrowBufferPool implements Closeable {
      * @return BufferAllocator configured with specified limits
      */
     private BufferAllocator createChildAllocator(String name, long maxAllocation) {
-        return rootAllocator.newChildAllocator(name, 0, maxAllocation);
+        return rootAllocator.newChildAllocator(name, new PoolAllocationListener(), 0, maxAllocation);
     }
 
     public long getTotalAllocatedBytes() {
