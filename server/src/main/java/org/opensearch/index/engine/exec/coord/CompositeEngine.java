@@ -102,7 +102,7 @@ import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.CATALOG_SNA
 import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.LAST_COMPOSITE_WRITER_GEN_KEY;
 
 @ExperimentalApi
-public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState, IndexingThrottler {
+public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState, IndexingThrottler, Closeable {
 
     private static final Consumer<ReferenceManager.RefreshListener> PRE_REFRESH_LISTENER_CONSUMER = refreshListener -> {
         try {
@@ -660,7 +660,7 @@ public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState
     }
 
     public synchronized void refresh(String source) throws EngineException {
-        refresh(source, Collections.EMPTY_MAP);
+        refresh(source, Collections.emptyMap());
     }
 
     public synchronized void refresh(String source, Map<DataFormat, RefreshInput> refreshInputs) throws EngineException {
@@ -764,6 +764,38 @@ public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState
         }
     }
 
+    public long getNativeBytesUsed() {
+        return engine.getNativeBytesUsed();
+    }
+
+    public static void main(String[] args) throws Exception {
+        CompositeEngine coordinator = new CompositeEngine(null, null, null, null);
+
+        for (int i = 0; i < 5; i++) {
+
+            // Ingestion into one generation
+            for (int k = 0; k < 10; k++) {
+                try (CompositeDataFormatWriter.CompositeDocumentInput doc = coordinator.documentInput()) {
+
+                    // Mapper part
+                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f1"), k + "_v1");
+                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f2"), k + "_v2");
+                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f3"), k + "_v3");
+                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f4"), k + "_v4");
+                    Engine.Index index = new Engine.Index(null, 1L, null);
+                    index.documentInput = doc;
+
+                    // applyIndexOperation part
+                    coordinator.index(index);
+                }
+            }
+
+            // Refresh until generation
+            coordinator.refresh("_manual_test");
+            System.out.println(coordinator.catalogSnapshot);
+        }
+    }
+
     @Override
     public Engine.DeleteResult delete(Engine.Delete delete) throws IOException {
         return null;
@@ -813,7 +845,7 @@ public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState
 
     @Override
     public void writeIndexingBuffer() throws EngineException {
-
+        refresh("write indexing buffer");
     }
 
     @Override
@@ -917,5 +949,10 @@ public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState
     @Override
     public String getHistoryUUID() {
         return historyUUID;
+    }
+
+    @Override
+    public void close() throws IOException {
+        engine.close();
     }
 }

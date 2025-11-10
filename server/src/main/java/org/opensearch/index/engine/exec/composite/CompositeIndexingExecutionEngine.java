@@ -8,6 +8,11 @@
 
 package org.opensearch.index.engine.exec.composite;
 
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.index.engine.exec.DataFormat;
 import org.opensearch.index.engine.exec.FileInfos;
 import org.opensearch.index.engine.exec.IndexingExecutionEngine;
@@ -146,5 +151,14 @@ public class CompositeIndexingExecutionEngine implements IndexingExecutionEngine
 
     public CompositeDataFormatWriterPool getDataFormatWriterPool() {
         return dataFormatWriterPool;
+    }
+
+    public long getNativeBytesUsed() {
+        return delegates.stream().mapToLong(IndexingExecutionEngine::getNativeBytesUsed).sum();
+    }
+
+    @Override
+    public void close() throws IOException {
+        IOUtils.close(delegates);
     }
 }
