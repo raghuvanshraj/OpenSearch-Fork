@@ -48,6 +48,6 @@ public class PoolAllocationListener implements AllocationListener {
 
     @Override
     public void onAllocation(long size) {
-        AllocationListener.super.onAllocation(size);
+        logger.info("Allocated {} bytes", size);
     }
 }
