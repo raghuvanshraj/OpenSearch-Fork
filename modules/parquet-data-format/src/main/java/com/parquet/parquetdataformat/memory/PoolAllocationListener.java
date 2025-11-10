@@ -20,7 +20,7 @@ public class PoolAllocationListener implements AllocationListener {
 
     @Override
     public void onPreAllocation(long size) {
-        AllocationListener.super.onPreAllocation(size);
+        logger.info("Pre-allocating {} bytes", size);
     }
 
     @Override
@@ -35,7 +35,7 @@ public class PoolAllocationListener implements AllocationListener {
 
     @Override
     public boolean onFailedAllocation(long size, AllocationOutcome outcome) {
-        logger.error("Failed to allocate {} bytes, outcome: {}", size, outcome);
+        logger.error("Failed to allocate {} bytes, outcome: {}", size, outcome.getDetails());
 
         // TODO we might be able to free up some memory here
         return false;
