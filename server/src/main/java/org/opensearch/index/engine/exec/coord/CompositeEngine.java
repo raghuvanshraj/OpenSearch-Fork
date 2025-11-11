@@ -734,12 +734,7 @@ public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState
     }
 
     public void triggerPossibleMerges() {
-        try {
-            mergeScheduler.triggerMerges();
-        } catch (IOException e) {
-            System.out.println("ERROR in MERGE : " + e.getMessage());
-            e.printStackTrace();
-        }
+        mergeScheduler.triggerMerges();
     }
 
     // This should get wired into searcher acquireSnapshot for initializing reader context later
