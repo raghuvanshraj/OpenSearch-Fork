@@ -768,34 +768,6 @@ public class CompositeEngine implements LifecycleAware, Indexer, CheckpointState
         return engine.getNativeBytesUsed();
     }
 
-    public static void main(String[] args) throws Exception {
-        CompositeEngine coordinator = new CompositeEngine(null, null, null, null);
-
-        for (int i = 0; i < 5; i++) {
-
-            // Ingestion into one generation
-            for (int k = 0; k < 10; k++) {
-                try (CompositeDataFormatWriter.CompositeDocumentInput doc = coordinator.documentInput()) {
-
-                    // Mapper part
-                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f1"), k + "_v1");
-                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f2"), k + "_v2");
-                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f3"), k + "_v3");
-                    doc.addField(new KeywordFieldMapper.KeywordFieldType("f4"), k + "_v4");
-                    Engine.Index index = new Engine.Index(null, 1L, null);
-                    index.documentInput = doc;
-
-                    // applyIndexOperation part
-                    coordinator.index(index);
-                }
-            }
-
-            // Refresh until generation
-            coordinator.refresh("_manual_test");
-            System.out.println(coordinator.catalogSnapshot);
-        }
-    }
-
     @Override
     public Engine.DeleteResult delete(Engine.Delete delete) throws IOException {
         return null;
