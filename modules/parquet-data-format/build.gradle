@@ -188,7 +188,7 @@ tasks.register('buildRust', Exec) {
 
   def cargoArgs = [cargoExecutable, 'build']
 //  if (buildType == 'release') {
-  cargoArgs.add('--release')
+//  cargoArgs.add('--release')
 //  }
 
   if (osName.contains('windows')) {
@@ -210,7 +210,7 @@ tasks.register('buildRust', Exec) {
 
 tasks.register('copyNativeLib', Copy) {
   dependsOn buildRust
-  from "src/main/rust/target/release"
+  from "src/main/rust/target/debug"
   into "src/main/resources/native"
   include "libparquet_dataformat_jni.*"
   include "parquet_dataformat_jni.dll"
