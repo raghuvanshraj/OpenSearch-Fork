@@ -151,7 +151,7 @@ public class VSRManager {
                 RustBridge.closeWriter(fileName);
                 RustBridge.flushToDisk(fileName);
             } catch (IOException e) {
-                System.err.println("Warning: Failed to close/flush writer: " + e.getMessage());
+                logger.error("Warning: Failed to close/flush writer: {}", e.getMessage());
             }
 
             // Close VSR Pool
@@ -159,7 +159,7 @@ public class VSRManager {
             managedVSR = null;
 
         } catch (Exception e) {
-            System.err.println("Error during close: " + e.getMessage());
+            logger.error("Error during close: {}", e.getMessage());
         }
     }
 
@@ -197,7 +197,7 @@ public class VSRManager {
                     vsrPool.completeVSR(frozenVSR);
                     vsrPool.unsetFrozenVSR();
                 } else {
-                    System.err.println("[JAVA] WARNING: Rotation occurred but no frozen VSR found");
+                    logger.error("[JAVA] WARNING: Rotation occurred but no frozen VSR found");
                 }
 
                 // Update to new active VSR
@@ -212,7 +212,7 @@ public class VSRManager {
                 logger.info("[JAVA] VSR rotation completed, new active VSR: {}, row count: {}", managedVSR.getId(), managedVSR.getRowCount());
             }
         } catch (IOException e) {
-            System.err.println("[JAVA] Error during VSR rotation: " + e.getMessage());
+            logger.error("[JAVA] Error during VSR rotation: {}", e.getMessage());
             throw e;
         }
     }
