@@ -119,7 +119,7 @@ public class IndexingMemoryController implements IndexingOperationListener, Clos
     /** How much total system memory (% or bytes) we will share across all actively indexing shards on this node for native indexing buffer (default: 10%). */
     public static final Setting<String> INDEX_NATIVE_BUFFER_SIZE_SETTING = Setting.simpleString(
         "indices.memory.native_index_buffer_size",
-        "10%",
+        "50%",
         Property.NodeScope
     );
 

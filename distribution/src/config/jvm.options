@@ -19,8 +19,8 @@
 # Xms represents the initial size of total heap space
 # Xmx represents the maximum size of total heap space
 
--Xms${heap.min}
--Xmx${heap.max}
+-Xms32g
+-Xmx32g
 
 ################################################################
 ## Expert settings
@@ -92,7 +92,7 @@ ${error.file}
 # -Xmx32g
 
 # Enable native memory tracking
--XX:NativeMemoryTracking=summary
+-XX:NativeMemoryTracking=detail
 
 # Allow jcmd to attach to the process (required for 'jcmd VM.native_memory' commands)
 -XX:+UnlockDiagnosticVMOptions

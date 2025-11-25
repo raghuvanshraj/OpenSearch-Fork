@@ -213,7 +213,7 @@ public class ManagedVSR implements AutoCloseable {
             if (state.get() != VSRState.CLOSED) {
                 state.set(VSRState.CLOSED);
                 vsr.close();
-                allocator.close();
+//                allocator.close();
             }
         } finally {
             lock.writeLock().unlock();

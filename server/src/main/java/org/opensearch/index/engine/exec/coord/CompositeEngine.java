@@ -676,6 +676,7 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
     }
 
     public synchronized void refresh(String source) throws EngineException {
+        long startTime = System.currentTimeMillis();
         try (CompositeEngine.ReleasableRef<CatalogSnapshot> catalogSnapshotReleasableRef = catalogSnapshotManager.acquireSnapshot()){
             refreshListeners.forEach(PRE_REFRESH_LISTENER_CONSUMER);
             RefreshInput refreshInput = new RefreshInput();
@@ -699,6 +700,7 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
             ex.printStackTrace();
             throw new RuntimeException(ex);
         }
+        logger.info("[DEBUG] Refresh time: {}", System.currentTimeMillis() - startTime);
     }
 
     public synchronized void applyMergeChanges(MergeResult mergeResult, OneMerge oneMerge) {

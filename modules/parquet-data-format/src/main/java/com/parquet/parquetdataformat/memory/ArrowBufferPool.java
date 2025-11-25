@@ -1,8 +1,13 @@
 package com.parquet.parquetdataformat.memory;
 
 import com.parquet.parquetdataformat.ParquetDataFormatPlugin;
+import org.apache.arrow.c.ArrowSchema;
+import org.apache.arrow.memory.AllocationListener;
+import org.apache.arrow.memory.AllocationOutcome;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.settings.Settings;
@@ -25,10 +30,28 @@ public class ArrowBufferPool implements Closeable {
     private final long maxChildAllocation;
 
     public ArrowBufferPool(Settings settings) {
-        long maxAllocationInBytes = 10L * 1024 * 1024 * 1024;
+        long maxAllocationInBytes = 32L * 1024 * 1024 * 1024;
 
         logger.info("Max native memory allocation for ArrowBufferPool: {} bytes", maxAllocationInBytes);
-        this.rootAllocator = new RootAllocator(maxAllocationInBytes);
+        this.rootAllocator = new RootAllocator(new AllocationListener() {
+            @Override
+            public void onAllocation(long size) {
+                logger.info("[AllocationListener] Allocated {} bytes", size);
+            }
+
+            @Override
+            public void onRelease(long size) {
+                logger.info("[AllocationListener] Released {} bytes", size);
+            }
+
+            @Override
+            public boolean onFailedAllocation(long size, AllocationOutcome outcome) {
+                logger.info("[AllocationListener] Failed to allocate {} bytes, status {}", size, outcome.getStatus());
+                return false;
+            }
+        },
+            maxAllocationInBytes
+        );
         this.maxChildAllocation = 1024 * 1024 * 1024;
     }
 
@@ -39,7 +62,7 @@ public class ArrowBufferPool implements Closeable {
      * @return BufferAllocator configured with pool settings
      */
     public BufferAllocator createChildAllocator(String name) {
-        return createChildAllocator(name, maxChildAllocation);
+        return rootAllocator;
     }
 
     /**
@@ -54,6 +77,7 @@ public class ArrowBufferPool implements Closeable {
     }
 
     public long getTotalAllocatedBytes() {
+        logger.info("Total child allocators: {}", rootAllocator.getChildAllocators().size());
         return rootAllocator.getAllocatedMemory();
     }
 
