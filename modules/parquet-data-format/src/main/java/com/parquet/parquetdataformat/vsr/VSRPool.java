@@ -312,8 +312,7 @@ public class VSRPool {
     }
 
     private boolean shouldRotateVSR(ManagedVSR vsr) {
-        return vsr.getRowCount() >= maxRowsPerVSR ||
-               memoryMonitor.shouldTriggerEarlyRefresh();
+        return false;
     }
 
     /**
