@@ -93,7 +93,7 @@ public class VSRManager {
             throw new IOException("Cannot add document - VSR is not active: " + managedVSR.getState());
         }
 
-        logger.info("[JAVA] addToManagedVSR called, current row count: {}", managedVSR.getRowCount());
+        logger.info("addToManagedVSR called, current row count: {}", managedVSR.getRowCount());
 
         try {
             // Since ParquetDocumentInput now works directly with ManagedVSR,
@@ -102,30 +102,30 @@ public class VSRManager {
             // which will increment the row count.
             WriteResult result = document.addToWriter();
 
-            logger.info("[JAVA] After adding document, row count: {}", managedVSR.getRowCount());
+            logger.info("After adding document, row count: {}", managedVSR.getRowCount());
 
             // Check for VSR rotation AFTER successful document processing
             maybeRotateActiveVSR();
 
             return result;
         } catch (Exception e) {
-            logger.info("[JAVA] ERROR in addToManagedVSR: {}", e.getMessage());
+            logger.info("ERROR in addToManagedVSR: {}", e.getMessage());
             throw new IOException("Failed to add document: " + e.getMessage(), e);
         }
     }
 
     public String flush(FlushIn flushIn) throws IOException {
-        logger.info("[JAVA] flush called, row count: {}", managedVSR.getRowCount());
+        logger.info("flush called, row count: {}", managedVSR.getRowCount());
         try {
             // Only flush if we have data
             if (managedVSR.getRowCount() == 0) {
-                logger.info("[JAVA] No data to flush, returning null");
+                logger.info("No data to flush, returning null");
                 return null;
             }
 
             // Transition VSR to FROZEN state before flushing
             managedVSR.setState(VSRState.FROZEN);
-            logger.info("[JAVA] Flushing {} rows", managedVSR.getRowCount());
+            logger.info("Flushing {} rows", managedVSR.getRowCount());
 
             // Transition to FLUSHING state
             managedVSR.setState(VSRState.FLUSHING);
@@ -135,11 +135,11 @@ public class VSRManager {
                 RustBridge.write(fileName, export.getArrayAddress(), export.getSchemaAddress());
                 RustBridge.closeWriter(fileName);
             }
-            logger.info("[JAVA] Successfully flushed data");
+            logger.info("Successfully flushed data");
 
             return fileName;
         } catch (Exception e) {
-            logger.info("[JAVA] ERROR in flush: {}", e.getMessage());
+            logger.info("ERROR in flush: {}", e.getMessage());
             throw new IOException("Failed to flush data: " + e.getMessage(), e);
         }
     }
@@ -178,12 +178,12 @@ public class VSRManager {
             boolean rotated = vsrPool.maybeRotateActiveVSR();
 
             if (rotated) {
-                logger.info("[JAVA] VSR rotation occurred after document addition");
+                logger.info("Active VSR was rotated, old VSR [{}], new VSR [{}]", vsrPool.getFrozenVSR(), vsrPool.getActiveVSR());
 
                 // Get the frozen VSR that was just created by rotation
                 ManagedVSR frozenVSR = vsrPool.getFrozenVSR();
                 if (frozenVSR != null) {
-                    logger.info("[JAVA] Processing frozen VSR: {} with {} rows", frozenVSR.getId(), frozenVSR.getRowCount());
+                    logger.info("Processing frozen VSR: {} with {} rows", frozenVSR, frozenVSR.getRowCount());
 
                     // Write the frozen VSR data immediately
                     frozenVSR.setState(VSRState.FLUSHING);
@@ -191,13 +191,13 @@ public class VSRManager {
                         RustBridge.write(fileName, export.getArrayAddress(), export.getSchemaAddress());
                     }
 
-                    logger.info("[JAVA] Successfully wrote frozen VSR data");
+                    logger.info("Successfully wrote frozen VSR {} with rows {}",  frozenVSR, frozenVSR.getRowCount());
 
                     // Complete the VSR processing
                     vsrPool.completeVSR(frozenVSR);
                     vsrPool.unsetFrozenVSR();
                 } else {
-                    logger.error("[JAVA] WARNING: Rotation occurred but no frozen VSR found");
+                    logger.error("Rotation occurred but no frozen VSR found");
                 }
 
                 // Update to new active VSR
@@ -209,10 +209,10 @@ public class VSRManager {
                 // Reinitialize field vector map with new VSR
                 reinitializeFieldVectorMap();
 
-                logger.info("[JAVA] VSR rotation completed, new active VSR: {}, row count: {}", managedVSR.getId(), managedVSR.getRowCount());
+                logger.info("VSR rotation completed, new active VSR: {}, row count: {}", managedVSR.getId(), managedVSR.getRowCount());
             }
         } catch (IOException e) {
-            logger.error("[JAVA] Error during VSR rotation: {}", e.getMessage());
+            logger.error("Error during VSR rotation: {}", e.getMessage());
             throw e;
         }
     }
@@ -230,7 +230,7 @@ public class VSRManager {
 
         // Check if we got a different VSR (rotation occurred)
         if (currentActive != managedVSR) {
-            logger.info("[JAVA] VSR rotation detected, updating references");
+            logger.info("VSR rotation detected, updating references");
 
             // Update the managed VSR reference
             managedVSR = currentActive;
@@ -239,7 +239,7 @@ public class VSRManager {
             reinitializeFieldVectorMap();
 
             // Note: Writer initialization is not needed per VSR as it's per file
-            logger.info("[JAVA] VSR rotation completed, new row count: {}", managedVSR.getRowCount());
+            logger.info("VSR rotation completed, new row count: {}", managedVSR.getRowCount());
         }
     }
 
