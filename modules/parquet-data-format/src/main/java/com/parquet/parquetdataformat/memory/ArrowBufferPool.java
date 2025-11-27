@@ -11,6 +11,7 @@ import org.opensearch.monitor.jvm.JvmInfo;
 import org.opensearch.monitor.os.OsProbe;
 
 import java.io.Closeable;
+import java.util.stream.Collectors;
 
 /**
  * Manages BufferAllocator lifecycle with configurable allocation strategies.
@@ -55,7 +56,7 @@ public class ArrowBufferPool implements Closeable {
 
     public long getTotalAllocatedBytes() {
         logger.info("Total child allocators: {}", rootAllocator.getChildAllocators().size());
-        logger.info("Current child allocators: {}", rootAllocator.getChildAllocators().stream().map(BufferAllocator::getName));
+        logger.info("Current child allocators: {}", rootAllocator.getChildAllocators().stream().map(BufferAllocator::getName).collect(Collectors.joining("\n")));
         return rootAllocator.getAllocatedMemory();
     }
 
