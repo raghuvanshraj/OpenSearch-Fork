@@ -55,6 +55,7 @@ public class ArrowBufferPool implements Closeable {
 
     public long getTotalAllocatedBytes() {
         logger.info("Total child allocators: {}", rootAllocator.getChildAllocators().size());
+        logger.info("Current child allocators: {}", rootAllocator.getChildAllocators().stream().map(BufferAllocator::getName));
         return rootAllocator.getAllocatedMemory();
     }
 
