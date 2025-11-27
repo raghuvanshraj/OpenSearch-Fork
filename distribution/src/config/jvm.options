@@ -88,8 +88,8 @@ ${error.file}
 21-:--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED
 
 # Heap size settings
-# -Xms32g
-# -Xmx32g
+-Xms32g
+-Xmx32g
 
 # Enable native memory tracking
 -XX:NativeMemoryTracking=summary
