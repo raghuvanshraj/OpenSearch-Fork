@@ -673,7 +673,7 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
             refreshListeners.forEach(POST_REFRESH_LISTENER_CONSUMER);
 
             // trigger merges
-            triggerPossibleMerges();
+//            triggerPossibleMerges();
         } catch (Exception ex) {
             ex.printStackTrace();
             throw new RuntimeException(ex);
