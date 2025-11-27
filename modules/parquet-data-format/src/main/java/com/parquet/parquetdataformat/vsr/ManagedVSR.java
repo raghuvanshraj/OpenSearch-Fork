@@ -215,13 +215,13 @@ public class ManagedVSR implements AutoCloseable {
     public void close() {
         lock.writeLock().lock();
         try {
-            if (state.get() != VSRState.CLOSED) {
+//            if (state.get() != VSRState.CLOSED) {
                 logger.info("Closing VSR: {}", this);
                 state.set(VSRState.CLOSED);
                 vsr.close();
                 allocator.close();
-            }
-            logger.warn("VSR {} is already closed, row count {}", this, vsr.getRowCount());
+//            }
+//            logger.warn("VSR {} is already closed, row count {}", this, vsr.getRowCount());
         } finally {
             lock.writeLock().unlock();
         }
