@@ -11,7 +11,6 @@ package com.parquet.parquetdataformat.vsr;
 import com.parquet.parquetdataformat.bridge.ArrowExport;
 import com.parquet.parquetdataformat.bridge.RustBridge;
 import com.parquet.parquetdataformat.memory.ArrowBufferPool;
-import com.parquet.parquetdataformat.memory.MemoryPressureMonitor;
 import com.parquet.parquetdataformat.writer.ParquetDocumentInput;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -20,7 +19,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.index.engine.exec.FlushIn;
 import org.opensearch.index.engine.exec.WriteResult;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -51,11 +49,9 @@ public class VSRManager {
         this.fileName = fileName;
         this.schema = schema;
 
-        // Create memory monitor and buffer pool
-        MemoryPressureMonitor memoryMonitor = new MemoryPressureMonitor(org.opensearch.common.settings.Settings.EMPTY);
 
         // Create VSR pool
-        this.vsrPool = new VSRPool("pool-" + fileName, schema, memoryMonitor, arrowBufferPool);
+        this.vsrPool = new VSRPool("pool-" + fileName, schema, arrowBufferPool);
 
         // Get active VSR from pool
         this.managedVSR = vsrPool.getActiveVSR();

@@ -1,13 +1,8 @@
 package com.parquet.parquetdataformat.memory;
 
 import com.parquet.parquetdataformat.ParquetDataFormatPlugin;
-import org.apache.arrow.c.ArrowSchema;
-import org.apache.arrow.memory.AllocationListener;
-import org.apache.arrow.memory.AllocationOutcome;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.VectorSchemaRoot;
-import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.settings.Settings;
