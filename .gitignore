@@ -86,3 +86,4 @@ doc-tools/missing-doclet/bin/
 /modules/parquet-data-format/jni/target/release
 **/Cargo.lock
 /modules/parquet-data-format/jni/
+/modules/parquet-data-format/benchmarks/src/main/generated/

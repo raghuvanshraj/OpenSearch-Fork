@@ -219,7 +219,7 @@ public class ManagedVSR implements AutoCloseable {
                 logger.info("Closing VSR: {}", this);
                 state.set(VSRState.CLOSED);
                 vsr.close();
-//                allocator.close();
+                allocator.close();
             }
             logger.warn("VSR {} is already closed, row count {}", this, vsr.getRowCount());
         } finally {
@@ -232,24 +232,6 @@ public class ManagedVSR implements AutoCloseable {
     public String toString() {
         return String.format("ManagedVSR{id='%s', state=%s, rows=%d, immutable=%s}",
             id, state.get(), getRowCount(), isImmutable());
-    }
-
-    public static void main(String[] args) {
-        RootAllocator allocator = new RootAllocator();
-        BigIntVector vector = new BigIntVector("vector", allocator);
-        vector.allocateNew(10);
-        vector.set(0, 100);  // Set position 0
-//        vector.setNull(1);
-        vector.set(2, 300);  // Set position 2
-// Position 1 is not set!
-        vector.setValueCount(3);  // Claims vector has 3 elements
-
-// Position 1 now contains undefined data
-//        long value = vector.get(1);  // Could be any value!
-        System.out.println(readBit(vector.getValidityBuffer(), 0));
-        System.out.println(readBit(vector.getValidityBuffer(), 1));
-        System.out.println(readBit(vector.getValidityBuffer(), 2));
-        System.out.println(readBit(vector.getValidityBuffer(), 3));
     }
 
     public static byte readBit(ArrowBuf validityBuffer, long index) {
