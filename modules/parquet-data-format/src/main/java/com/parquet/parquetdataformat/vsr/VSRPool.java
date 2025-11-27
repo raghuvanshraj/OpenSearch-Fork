@@ -44,7 +44,7 @@ public class VSRPool {
         this.vsrCounter = new AtomicInteger(0);
 
         // Configuration - could be made configurable
-        this.maxRowsPerVSR = 100000; // Max rows before forcing freeze
+        this.maxRowsPerVSR = 50000; // Max rows before forcing freeze
 
         // Initialize with first active VSR
         initializeActiveVSR();
