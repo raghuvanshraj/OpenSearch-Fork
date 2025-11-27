@@ -194,7 +194,9 @@ public class VSRManager {
                     logger.info("Successfully wrote frozen VSR {} with rows {}",  frozenVSR, frozenVSR.getRowCount());
 
                     // Complete the VSR processing
+                    logger.info("Allocator memory before closing frozen VSR: {}", frozenVSR.getAllocator().getAllocatedMemory());
                     vsrPool.completeVSR(frozenVSR);
+                    logger.info("Allocator memory after closing frozen VSR: {}", frozenVSR.getAllocator().getAllocatedMemory());
                     vsrPool.unsetFrozenVSR();
                 } else {
                     logger.error("Rotation occurred but no frozen VSR found");

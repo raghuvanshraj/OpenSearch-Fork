@@ -10,6 +10,9 @@ import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -22,6 +25,8 @@ import static org.apache.arrow.vector.BitVectorHelper.byteIndex;
  * and provides thread-safe access for the ACTIVE/FROZEN lifecycle.
  */
 public class ManagedVSR implements AutoCloseable {
+
+    private static final Logger logger = LogManager.getLogger(ManagedVSR.class);
 
     private final String id;
     private final VectorSchemaRoot vsr;
@@ -211,10 +216,12 @@ public class ManagedVSR implements AutoCloseable {
         lock.writeLock().lock();
         try {
             if (state.get() != VSRState.CLOSED) {
+                logger.info("Closing VSR: {}", this);
                 state.set(VSRState.CLOSED);
                 vsr.close();
 //                allocator.close();
             }
+            logger.warn("VSR {} is already closed, row count {}", this, vsr.getRowCount());
         } finally {
             lock.writeLock().unlock();
         }
