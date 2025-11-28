@@ -1,68 +1,40 @@
 package com.parquet.parquetdataformat.vsr;
 
 import com.parquet.parquetdataformat.bridge.ArrowExport;
-import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
-
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import static org.apache.arrow.vector.BitVectorHelper.byteIndex;
+import org.apache.arrow.vector.types.pojo.Schema;
 
 /**
  * Managed wrapper around VectorSchemaRoot that handles state transitions
- * and provides thread-safe access for the ACTIVE/FROZEN lifecycle.
+ * for the ACTIVE/FROZEN/CLOSED lifecycle with controlled access methods.
  */
 public class ManagedVSR implements AutoCloseable {
 
     private final String id;
     private final VectorSchemaRoot vsr;
     private final BufferAllocator allocator;
-    private final AtomicReference<VSRState> state;
-    private final ReadWriteLock lock;
-    private final long createdTime;
+    private VSRState state;
 
 
-    public ManagedVSR(String id, VectorSchemaRoot vsr, BufferAllocator allocator) {
+    public ManagedVSR(String id, Schema schema, BufferAllocator allocator) {
         this.id = id;
-        this.vsr = vsr;
+        this.vsr = VectorSchemaRoot.create(schema, allocator);
         this.allocator = allocator;
-        this.state = new AtomicReference<>(VSRState.ACTIVE);
-        this.lock = new ReentrantReadWriteLock();
-        this.createdTime = System.currentTimeMillis();
-    }
-
-    /**
-     * Gets the underlying VectorSchemaRoot.
-     * Should only be used when holding appropriate locks.
-     *
-     * @return VectorSchemaRoot instance
-     */
-    public VectorSchemaRoot getVSR() {
-        return vsr;
+        this.state = VSRState.ACTIVE;
     }
 
     /**
      * Gets the current row count in this VSR.
-     * Thread-safe read operation.
      *
      * @return Number of rows currently in the VSR
      */
     public int getRowCount() {
-        lock.readLock().lock();
-        try {
-            return vsr.getRowCount();
-        } finally {
-            lock.readLock().unlock();
-        }
+        return vsr.getRowCount();
     }
 
     /**
@@ -73,45 +45,72 @@ public class ManagedVSR implements AutoCloseable {
      * @throws IllegalStateException if VSR is not active or is immutable
      */
     public void setRowCount(int rowCount) {
-        lock.writeLock().lock();
-        try {
-            if (state.get() != VSRState.ACTIVE) {
-                throw new IllegalStateException("Cannot modify VSR in state: " + state.get());
-            }
-            vsr.setRowCount(rowCount);
-        } finally {
-            lock.writeLock().unlock();
+        if (state != VSRState.ACTIVE) {
+            throw new IllegalStateException("Cannot modify VSR in state: " + state);
         }
+        vsr.setRowCount(rowCount);
     }
 
     /**
      * Gets a field vector by name.
-     * Thread-safe read operation.
      *
      * @param fieldName Name of the field
      * @return FieldVector for the field, or null if not found
      */
     public FieldVector getVector(String fieldName) {
-        lock.readLock().lock();
-        try {
-            return vsr.getVector(fieldName);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return vsr.getVector(fieldName);
     }
 
     /**
      * Changes the state of this VSR.
      * Handles state transition logic and immutability.
+     * This method is private to ensure controlled state transitions.
      *
      * @param newState New state to transition to
      */
-    public void setState(VSRState newState) {
-        VSRState oldState = state.getAndSet(newState);
+    private void setState(VSRState newState) {
+        VSRState oldState = state;
+        state = newState;
 
         System.out.println(String.format(
             "[VSR] State transition: %s -> %s for VSR %s",
             oldState, newState, id));
+    }
+
+    /**
+     * Transitions the VSR from ACTIVE to FROZEN state.
+     * This is the only way to freeze a VSR.
+     *
+     * @throws IllegalStateException if VSR is not in ACTIVE state
+     */
+    public void moveToFrozen() {
+        if (state != VSRState.ACTIVE) {
+            throw new IllegalStateException(String.format(
+                "Cannot freeze VSR %s: expected ACTIVE state but was %s", id, state));
+        }
+        setState(VSRState.FROZEN);
+    }
+
+    /**
+     * Transitions the VSR from FROZEN to CLOSED state.
+     * This method is private and only called by close().
+     *
+     * @throws IllegalStateException if VSR is not in FROZEN state
+     */
+    private void moveToClosed() {
+        if (state != VSRState.FROZEN) {
+            throw new IllegalStateException(String.format(
+                "Cannot close VSR %s: expected FROZEN state but was %s", id, state));
+        }
+        setState(VSRState.CLOSED);
+
+        // Clean up resources
+        if (vsr != null) {
+            vsr.close();
+        }
+        if (allocator != null) {
+            allocator.close();
+        }
     }
 
     /**
@@ -120,49 +119,37 @@ public class ManagedVSR implements AutoCloseable {
      * @return Current VSRState
      */
     public VSRState getState() {
-        return state.get();
+        return state;
     }
 
     /**
      * Exports this VSR to Arrow C Data Interface for Rust handoff.
-     * Only allowed when VSR is FROZEN or FLUSHING.
+     * Only allowed when VSR is FROZEN.
      *
      * @return ArrowExport containing ArrowArray and ArrowSchema
      * @throws IllegalStateException if VSR is not in correct state
      */
     public ArrowExport exportToArrow() {
-        VSRState currentState = state.get();
-        if (currentState != VSRState.FROZEN &&
-            currentState != VSRState.FLUSHING) {
-            throw new IllegalStateException("Cannot export VSR in state: " + currentState);
+        if (state != VSRState.FROZEN) {
+            throw new IllegalStateException("Cannot export VSR in state: " + state + ". VSR must be FROZEN to export.");
         }
 
-        lock.readLock().lock();
-        try {
-            ArrowArray arrowArray = ArrowArray.allocateNew(allocator);
-            ArrowSchema arrowSchema = ArrowSchema.allocateNew(allocator);
+        ArrowArray arrowArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema arrowSchema = ArrowSchema.allocateNew(allocator);
 
-            // Export the VectorSchemaRoot to C Data Interface
-            Data.exportVectorSchemaRoot(allocator, vsr, null, arrowArray, arrowSchema);
+        // Export the VectorSchemaRoot to C Data Interface
+        Data.exportVectorSchemaRoot(allocator, vsr, null, arrowArray, arrowSchema);
 
-            return new ArrowExport(arrowArray, arrowSchema);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return new ArrowExport(arrowArray, arrowSchema);
     }
 
     public ArrowExport exportSchema() {
-        lock.readLock().lock();
-        try {
-            ArrowSchema arrowSchema = ArrowSchema.allocateNew(allocator);
+        ArrowSchema arrowSchema = ArrowSchema.allocateNew(allocator);
 
-            // Export the VectorSchemaRoot to C Data Interface
-            Data.exportSchema(allocator, vsr.getSchema(), null, arrowSchema);
+        // Export the VectorSchemaRoot to C Data Interface
+        Data.exportSchema(allocator, vsr.getSchema(), null, arrowSchema);
 
-            return new ArrowExport(null, arrowSchema);
-        } finally {
-            lock.readLock().unlock();
-        }
+        return new ArrowExport(null, arrowSchema);
     }
 
     /**
@@ -171,8 +158,7 @@ public class ManagedVSR implements AutoCloseable {
      * @return true if VSR cannot be modified
      */
     public boolean isImmutable() {
-        VSRState currentState = state.get();
-        return currentState != VSRState.ACTIVE;
+        return state != VSRState.ACTIVE;
     }
 
 
@@ -186,15 +172,6 @@ public class ManagedVSR implements AutoCloseable {
     }
 
     /**
-     * Gets the creation timestamp.
-     *
-     * @return Creation time in milliseconds
-     */
-    public long getCreatedTime() {
-        return createdTime;
-    }
-
-    /**
      * Gets the associated BufferAllocator.
      *
      * @return BufferAllocator used by this VSR
@@ -205,18 +182,31 @@ public class ManagedVSR implements AutoCloseable {
 
     /**
      * Closes this VSR and releases all resources.
+     * This is the only way to transition a VSR to CLOSED state.
+     * VSR must be in FROZEN state before it can be closed.
+     *
+     * @throws IllegalStateException if VSR is in ACTIVE state (must freeze first)
      */
     @Override
     public void close() {
-        lock.writeLock().lock();
-        try {
-            if (state.get() != VSRState.CLOSED) {
-                state.set(VSRState.CLOSED);
-                vsr.close();
-                allocator.close();
-            }
-        } finally {
-            lock.writeLock().unlock();
+        // If already CLOSED, do nothing (idempotent)
+        if (state == VSRState.CLOSED) {
+            return;
+        }
+
+        // If ACTIVE, must freeze first
+        if (state == VSRState.ACTIVE) {
+            throw new IllegalStateException(String.format(
+                "Cannot close VSR %s: VSR is still ACTIVE. Must freeze VSR before closing.", id));
+        }
+
+        // If FROZEN, transition to CLOSED
+        if (state == VSRState.FROZEN) {
+            moveToClosed();
+        } else {
+            // This should never happen with current states, but defensive programming
+            throw new IllegalStateException(String.format(
+                "Cannot close VSR %s: unexpected state %s", id, state));
         }
     }
 
@@ -224,36 +214,6 @@ public class ManagedVSR implements AutoCloseable {
     @Override
     public String toString() {
         return String.format("ManagedVSR{id='%s', state=%s, rows=%d, immutable=%s}",
-            id, state.get(), getRowCount(), isImmutable());
-    }
-
-    public static void main(String[] args) {
-        RootAllocator allocator = new RootAllocator();
-        BigIntVector vector = new BigIntVector("vector", allocator);
-        vector.allocateNew(10);
-        vector.set(0, 100);  // Set position 0
-//        vector.setNull(1);
-        vector.set(2, 300);  // Set position 2
-// Position 1 is not set!
-        vector.setValueCount(3);  // Claims vector has 3 elements
-
-// Position 1 now contains undefined data
-//        long value = vector.get(1);  // Could be any value!
-        System.out.println(readBit(vector.getValidityBuffer(), 0));
-        System.out.println(readBit(vector.getValidityBuffer(), 1));
-        System.out.println(readBit(vector.getValidityBuffer(), 2));
-        System.out.println(readBit(vector.getValidityBuffer(), 3));
-    }
-
-    public static byte readBit(ArrowBuf validityBuffer, long index) {
-        // it can be observed that some logic is duplicate of the logic in setValidityBit.
-        // this is because JIT cannot always remove the if branch in setValidityBit,
-        // so we give a dedicated implementation for setting bits.
-        final long byteIndex = byteIndex(index);
-
-        // the byte is promoted to an int, because according to Java specification,
-        // bytes will be promoted to ints automatically, upon expression evaluation.
-        // by promoting it manually, we avoid the unnecessary conversions.
-        return validityBuffer.getByte(byteIndex);
+            id, state, getRowCount(), isImmutable());
     }
 }

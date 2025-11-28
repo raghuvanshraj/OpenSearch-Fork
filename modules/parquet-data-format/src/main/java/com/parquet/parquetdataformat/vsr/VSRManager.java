@@ -118,11 +118,8 @@ public class VSRManager {
             }
 
             // Transition VSR to FROZEN state before flushing
-            managedVSR.setState(VSRState.FROZEN);
+            managedVSR.moveToFrozen();
             System.out.println("[JAVA] Flushing " + managedVSR.getRowCount() + " rows");
-
-            // Transition to FLUSHING state
-            managedVSR.setState(VSRState.FLUSHING);
 
             // Direct native call - write the managed VSR data
             try (ArrowExport export = managedVSR.exportToArrow()) {
@@ -181,7 +178,6 @@ public class VSRManager {
                         " with " + frozenVSR.getRowCount() + " rows");
 
                     // Write the frozen VSR data immediately
-                    frozenVSR.setState(VSRState.FLUSHING);
                     try (ArrowExport export = frozenVSR.exportToArrow()) {
                         RustBridge.write(fileName, export.getArrayAddress(), export.getSchemaAddress());
                     }
