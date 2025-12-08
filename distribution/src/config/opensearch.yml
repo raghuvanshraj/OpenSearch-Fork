@@ -125,3 +125,14 @@ ${path.logs}
 #
 # Limits the memory pool for datafusion which it uses for query execution.
 #datafusion.search.memory_pool: 1GB
+
+# Repository name
+node.attr.remote_store.segment.repository: remote-s3-parquet
+node.attr.remote_store.translog.repository: remote-s3-parquet
+node.attr.remote_store.state.repository: remote-s3-parquet
+
+# Segment repository settings
+node.attr.remote_store.repository.remote-s3-parquet.type: s3
+node.attr.remote_store.repository.remote-s3-parquet.settings.bucket: local-opensearch-bucket
+node.attr.remote_store.repository.remote-s3-parquet.settings.base_path: remote-s3-parquet
+node.attr.remote_store.repository.remote-s3-parquet.settings.region: us-east-1
