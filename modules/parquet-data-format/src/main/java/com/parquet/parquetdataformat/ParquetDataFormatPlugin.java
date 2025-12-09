@@ -141,8 +141,7 @@ public class ParquetDataFormatPlugin extends Plugin implements DataFormatPlugin,
     }
 
     @Override
-    public BlobContainer createBlobContainer(BlobStore blobStore, BlobPath baseBlobPath) throws IOException
-    {
+    public BlobContainer createBlobContainer(BlobStore blobStore, BlobPath baseBlobPath) throws IOException {
         BlobPath formatPath = baseBlobPath.add(getDataFormat().name().toLowerCase());
         return blobStore.blobContainer(formatPath);
     }

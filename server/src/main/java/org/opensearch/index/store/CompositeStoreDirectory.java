@@ -63,13 +63,22 @@ public class CompositeStoreDirectory {
         this.directoryPath = shardPath.getDataPath();
 
         try {
-            DataSourcePlugin plugin = pluginsService.filterPlugins(DataSourcePlugin.class).stream()
-                .findAny()
-                .orElseThrow(() -> new IllegalArgumentException("dataformat is not registered."));
-            delegates.add(plugin.createFormatStoreDirectory(indexSettings, shardPath));
-            delegatesMap.put(plugin.getDataFormat().name(), delegates.get(delegates.size() - 1));
-        } catch (NullPointerException | IOException e) {
-                throw new RuntimeException("Failed to create fallback directory", e);
+            pluginsService.filterPlugins(DataSourcePlugin.class).forEach(plugin -> {
+                try {
+                    FormatStoreDirectory<?> formatDir = plugin.createFormatStoreDirectory(indexSettings, shardPath);
+                    delegates.add(formatDir);
+                    delegatesMap.put(plugin.getDataFormat().name(), formatDir);
+                } catch (IOException e) {
+                    logger.error("Failed to create FormatStoreDirectory for format: {}", plugin.getDataFormat().name(), e);
+                    throw new RuntimeException("Failed to create format directory for " + plugin.getDataFormat().name(), e);
+                }
+            });
+            
+            if (delegates.isEmpty()) {
+                throw new IllegalArgumentException("No dataformat plugins registered.");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create CompositeStoreDirectory", e);
         }
     }
 
