@@ -13,6 +13,7 @@ import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.engine.exec.FileMetadata;
 import org.opensearch.index.engine.exec.coord.Any;
@@ -20,6 +21,7 @@ import org.opensearch.index.shard.ShardPath;
 import org.opensearch.plugins.DataSourcePlugin;
 import org.opensearch.plugins.PluginsService;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Path;
@@ -42,7 +44,7 @@ import java.util.Set;
  * @opensearch.api
  */
 @PublicApi(since = "3.0.0")
-public class CompositeStoreDirectory {
+public class CompositeStoreDirectory implements Closeable {
 
     private Any dataFormat;
     private final Path directoryPath;
@@ -73,7 +75,7 @@ public class CompositeStoreDirectory {
                     throw new RuntimeException("Failed to create format directory for " + plugin.getDataFormat().name(), e);
                 }
             });
-            
+
             if (delegates.isEmpty()) {
                 throw new IllegalArgumentException("No dataformat plugins registered.");
             }
@@ -247,6 +249,11 @@ public class CompositeStoreDirectory {
     public String calculateUploadChecksum(FileMetadata fileMetadata) throws IOException {
         FormatStoreDirectory<?> formatDirectory = getDirectoryForFormat(fileMetadata.dataFormat());
         return formatDirectory.calculateUploadChecksum(fileMetadata.file());
+    }
+
+    @Override
+    public void close() throws IOException {
+        IOUtils.close(delegates);
     }
 }
 

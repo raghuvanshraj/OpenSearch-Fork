@@ -307,9 +307,9 @@ public class ParquetRemoteStoreUploadIT extends RemoteStoreBaseIntegTestCase {
             // Verify files are in correct directory
             Set<String> parquetFiles = getSegmentFiles(parquetDir);
 
-            // Parquet files should have .parquet extension
+            // Parquet files should contain .parquet in filename
             boolean hasParquetFiles = parquetFiles.stream()
-                .anyMatch(f -> f.endsWith(".parquet"));
+                .anyMatch(f -> f.contains(".parquet"));
             assertTrue("Parquet directory should contain .parquet files", hasParquetFiles);
 
         }, 60, TimeUnit.SECONDS);

@@ -285,6 +285,7 @@ clean {
             exclude '.gitkeep' // Keep any gitkeep files if they exist
         }
         delete 'src/main/rust/target'
+        delete "src/main/resources/native"
         println "Cleaned native build artifacts: src/main/resources/native and src/main/rust/target"
     }
 }
