@@ -2048,7 +2048,11 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
                     Version.LATEST,
                     fileMetadata.dataFormat()
                 );
-                formatAwareMap.put(fileMetadata, storeFileMetadata);
+                
+                // Normalize directory to empty string for replication comparison
+                // Directory paths are node-specific and not serialized in ReplicationCheckpoint
+                FileMetadata normalizedKey = new FileMetadata(fileMetadata.dataFormat(), "", fileMetadata.file());
+                formatAwareMap.put(normalizedKey, storeFileMetadata);
             } catch (IOException e) {
                 logger.warn("Failed to create StoreFileMetadata for {}", fileMetadata, e);
             }

@@ -137,7 +137,7 @@ public class CompositeStoreDirectory implements Closeable {
     // Directory interface implementation with routing
     public FileMetadata[] listAll() throws IOException {
         Set<FileMetadata> allFiles = new HashSet<>();
-        for (FormatStoreDirectory directory : delegates) {
+        for (FormatStoreDirectory<?> directory : delegates) {
             allFiles.addAll(Arrays.asList(directory.listAll()));
         }
         return allFiles.toArray(new FileMetadata[0]);
@@ -145,14 +145,14 @@ public class CompositeStoreDirectory implements Closeable {
 
     public void sync(Collection<FileMetadata> fileMetadataList) throws IOException {
         // Group files by directory and sync each directory
-        Map<FormatStoreDirectory, List<String>> filesByDirectory = new HashMap<>();
+        Map<FormatStoreDirectory<?>, List<String>> filesByDirectory = new HashMap<>();
 
         for (var fileMetadata : fileMetadataList) {
-            FormatStoreDirectory directory = getDirectoryForFormat(fileMetadata.dataFormat());
+            FormatStoreDirectory<?> directory = getDirectoryForFormat(fileMetadata.dataFormat());
             filesByDirectory.computeIfAbsent(directory, k -> new ArrayList<>()).add(fileMetadata.file());
         }
 
-        for (Map.Entry<FormatStoreDirectory, List<String>> entry : filesByDirectory.entrySet()) {
+        for (Map.Entry<FormatStoreDirectory<?>, List<String>> entry : filesByDirectory.entrySet()) {
             entry.getKey().sync(entry.getValue());
         }
     }
