@@ -5,6 +5,7 @@ apply plugin: 'idea'
 apply plugin: 'eclipse'
 apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.yaml-rest-test'
+apply plugin: 'opensearch.internal-cluster-test'
 apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.java-agent'
 
@@ -141,6 +142,20 @@ integTest {
   if (System.getProperty("test.debug") != null) {
     jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
   }
+}
+
+internalClusterTest {
+  // JVM arguments required for Arrow memory access (Java 9+ only)
+  if (JavaVersion.current().isJava9Compatible()) {
+    jvmArgs '--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED'
+    jvmArgs '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
+  }
+}
+
+testClusters.all {
+  // JVM arguments required for Arrow memory access in cluster nodes
+  jvmArgs '--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED'
+  jvmArgs '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
 }
 
 testClusters.integTest {
