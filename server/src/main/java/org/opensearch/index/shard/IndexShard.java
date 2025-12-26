@@ -151,6 +151,7 @@ import org.opensearch.index.engine.exec.bridge.StatsHolder;
 import org.opensearch.index.engine.exec.composite.CompositeDataFormatWriter;
 import org.opensearch.index.engine.exec.coord.CatalogSnapshot;
 import org.opensearch.index.engine.exec.coord.CompositeEngine;
+import org.opensearch.index.engine.exec.coord.SegmentInfosCatalogSnapshot;
 import org.opensearch.index.fielddata.FieldDataStats;
 import org.opensearch.index.fielddata.ShardFieldData;
 import org.opensearch.index.flush.FlushStats;
@@ -1830,6 +1831,10 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
      * @throws IOException if an error occurs during replication finalization
      */
     public void finalizeReplication(CatalogSnapshot catalogSnapshot, ReplicationCheckpoint replicationCheckpoint) throws IOException {
+        if (catalogSnapshot instanceof SegmentInfosCatalogSnapshot) {
+            finalizeReplication(((SegmentInfosCatalogSnapshot) catalogSnapshot).getSegmentInfos());
+            return;
+        }
         if (Thread.holdsLock(mutex)) {
             throw new IllegalStateException("finalizeReplication must not be called under mutex - potential deadlock risk");
         }
@@ -1991,6 +1996,9 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
      * TODO: SegRep changes for decoupling. looks to depend on codec.
      */
     ReplicationCheckpoint computeReplicationCheckpoint(CatalogSnapshot catalogSnapshot) throws IOException {
+        if (catalogSnapshot instanceof SegmentInfosCatalogSnapshot) {
+            return computeReplicationCheckpoint(((SegmentInfosCatalogSnapshot) catalogSnapshot).getSegmentInfos());
+        }
         if (catalogSnapshot == null) {
             return ReplicationCheckpoint.empty(shardId);
         }
@@ -2024,14 +2032,14 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
     private Map<FileMetadata, StoreFileMetadata> extractFormatAwareMetadata(CatalogSnapshot catalogSnapshot) throws IOException {
         Map<FileMetadata, StoreFileMetadata> formatAwareMap = new HashMap<>();
 
-        if(catalogSnapshot == null){
+        if (catalogSnapshot == null) {
             return formatAwareMap;
         }
 
         for (FileMetadata fileMetadata : catalogSnapshot.getFileMetadataList()) {
             try {
-                long fileLength = store.compositeStoreDirectory().fileLength(fileMetadata);
-                long checksum = store.compositeStoreDirectory().calculateChecksum(fileMetadata);
+                long fileLength = store.directory().fileLength(fileMetadata.serialize());
+                long checksum = ((CompositeStoreDirectory) store.directory()).calculateChecksum(fileMetadata);
 
                 StoreFileMetadata storeFileMetadata = new StoreFileMetadata(
                     fileMetadata.file(),
@@ -4529,6 +4537,10 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         return indexSettings() != null && (indexSettings().isRemoteTranslogStoreEnabled());
     }
 
+    public boolean isOptimizedIndex() {
+        return indexSettings().isOptimizedIndex();
+    }
+
     /**
      * This checks if we are in state to upload to remote store. Until the cluster-manager informs the shard through
      * cluster state, the shard will not be in STARTED state. This method is used to prevent pre-emptive segment or
@@ -5788,7 +5800,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
 
     public CompositeEngine.ReleasableRef<CatalogSnapshot> getCatalogSnapshotFromEngine() {
         try {
-            return getIndexingExecutionCoordinator().acquireSnapshot();
+            return getIndexer().acquireSnapshot();
         } catch (Exception e) {
             throw new OpenSearchException("Error occurred while getting catalog snapshot", e);
         }

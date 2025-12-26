@@ -106,8 +106,8 @@ public class RemoteStoreRefreshListenerTests extends IndexShardTestCase {
             indexShard,
             SegmentReplicationCheckpointPublisher.EMPTY,
             tracker,
-            DefaultRemoteStoreSettings.INSTANCE
-        );
+            DefaultRemoteStoreSettings.INSTANCE,
+            );
     }
 
     private void indexDocs(int startDocId, int numberOfDocs) throws IOException {
@@ -175,8 +175,8 @@ public class RemoteStoreRefreshListenerTests extends IndexShardTestCase {
             shard,
             SegmentReplicationCheckpointPublisher.EMPTY,
             mock(RemoteSegmentTransferTracker.class),
-            DefaultRemoteStoreSettings.INSTANCE
-        );
+            DefaultRemoteStoreSettings.INSTANCE,
+            );
         assertTrue(remoteStoreRefreshListener.isLocalOrSnapshotRecoveryOrSeeding());
         assertTrue(remoteStoreRefreshListener.isLowPriorityUpload());
     }
@@ -244,8 +244,8 @@ public class RemoteStoreRefreshListenerTests extends IndexShardTestCase {
             shard,
             SegmentReplicationCheckpointPublisher.EMPTY,
             mock(RemoteSegmentTransferTracker.class),
-            DefaultRemoteStoreSettings.INSTANCE
-        );
+            DefaultRemoteStoreSettings.INSTANCE,
+            );
 
         // Validate that the stream of metadata file of remoteMetadataDirectory has been opened only once and the
         // listFilesByPrefixInLexicographicOrder has been called twice.
@@ -849,8 +849,8 @@ public class RemoteStoreRefreshListenerTests extends IndexShardTestCase {
             shard,
             emptyCheckpointPublisher,
             tracker,
-            remoteStoreSettings
-        );
+            remoteStoreSettings,
+            );
         refreshListener.afterRefresh(true);
         return Tuple.tuple(refreshListener, remoteStoreStatsTrackerFactory);
     }

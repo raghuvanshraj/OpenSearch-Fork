@@ -113,6 +113,9 @@ import java.util.stream.Collectors;
 
 import static org.opensearch.index.engine.Engine.HISTORY_UUID_KEY;
 import static org.opensearch.index.engine.Engine.MAX_UNSAFE_AUTO_ID_TIMESTAMP_COMMIT_ID;
+import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.CATALOG_SNAPSHOT_KEY;
+import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.CATALOG_SNAPSHOT_ID;
+import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.LAST_COMPOSITE_WRITER_GEN_KEY;
 import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.*;
 
 @ExperimentalApi

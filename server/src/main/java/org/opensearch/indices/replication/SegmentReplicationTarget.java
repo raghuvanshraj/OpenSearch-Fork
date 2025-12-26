@@ -20,6 +20,7 @@ import org.opensearch.common.lucene.Lucene;
 import org.opensearch.common.util.CancellableThreads;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.index.engine.exec.coord.CatalogSnapshot;
+import org.opensearch.index.engine.exec.coord.SegmentInfosCatalogSnapshot;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.index.store.Store;
 import org.opensearch.index.store.StoreFileMetadata;
@@ -142,7 +143,7 @@ public class SegmentReplicationTarget extends AbstractSegmentReplicationTarget {
      */
     private CatalogSnapshot deserializeCatalogSnapshot(byte[] infoBytes) throws IOException {
         try (BytesStreamInput in = new BytesStreamInput(infoBytes)) {
-            return new CatalogSnapshot(in);
+            return new SegmentInfosCatalogSnapshot(in);
         }
     }
 }

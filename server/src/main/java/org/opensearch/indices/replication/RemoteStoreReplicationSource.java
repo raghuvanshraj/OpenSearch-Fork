@@ -30,10 +30,7 @@ import org.opensearch.indices.replication.checkpoint.RemoteStoreMergedSegmentChe
 import org.opensearch.indices.replication.checkpoint.ReplicationCheckpoint;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -139,8 +136,8 @@ public class RemoteStoreReplicationSource implements SegmentReplicationSource {
             }
             logger.debug("Downloading format-aware segment files from remote store {}", filesToFetch);
             if (remoteMetadataExists()) {
-                final CompositeStoreDirectory storeDirectory = indexShard.store().compositeStoreDirectory();
-                final List<FileMetadata> directoryFiles = List.of(storeDirectory.listFileMetadata());
+                final CompositeStoreDirectory storeDirectory = (CompositeStoreDirectory) indexShard.store().directory();
+                final List<FileMetadata> directoryFiles = Arrays.stream(storeDirectory.listAll()).map(FileMetadata::new).collect(Collectors.toList());
 
                 final List<FileMetadata> toDownloadFileMetadata = new ArrayList<>();
 

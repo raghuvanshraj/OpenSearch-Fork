@@ -14,11 +14,10 @@ import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.unit.ByteSizeValue;
-import org.opensearch.index.engine.Engine;
-import org.opensearch.index.engine.EngineException;
-import org.opensearch.index.engine.SafeCommitInfo;
-import org.opensearch.index.engine.Segment;
+import org.opensearch.index.engine.*;
 import org.opensearch.index.engine.exec.composite.CompositeDataFormatWriter;
+import org.opensearch.index.engine.exec.coord.CatalogSnapshot;
+import org.opensearch.index.engine.exec.coord.CompositeEngine;
 import org.opensearch.index.seqno.SequenceNumbers;
 import org.opensearch.index.translog.Translog;
 import org.opensearch.index.translog.TranslogManager;
@@ -31,7 +30,7 @@ import java.util.Map;
 import static org.opensearch.index.engine.Engine.HISTORY_UUID_KEY;
 
 @PublicApi(since = "1.0.0")
-public interface Indexer {
+public interface Indexer extends LifecycleAware {
 
     /**
      * Perform document index operation on the engine
@@ -212,6 +211,8 @@ public interface Indexer {
     void flushAndClose() throws IOException;
 
     void failEngine(String reason, @Nullable Exception failure);
+
+    CompositeEngine.ReleasableRef<CatalogSnapshot> acquireSnapshot();
 
     /**
      * If the specified throwable contains a fatal error in the throwable graph, such a fatal error will be thrown. Callers should ensure
