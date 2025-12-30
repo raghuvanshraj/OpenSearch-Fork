@@ -8,6 +8,8 @@
 
 package org.opensearch.index.engine.exec.composite;
 
+import org.opensearch.index.engine.exec.coord.Segment;
+
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicLong;
@@ -114,8 +116,8 @@ public class CompositeIndexingExecutionEngine implements IndexingExecutionEngine
         RefreshResult finalResult;
         try {
             List<CompositeDataFormatWriter> dataFormatWriters = dataFormatWriterPool.checkoutAll();
-            List<CatalogSnapshot.Segment> refreshedSegment = ignore.getExistingSegments();
-            List<CatalogSnapshot.Segment> newSegmentList = new ArrayList<>();
+            List<Segment> refreshedSegment = ignore.getExistingSegments();
+            List<Segment> newSegmentList = new ArrayList<>();
             // flush to disk
             for (CompositeDataFormatWriter dataFormatWriter : dataFormatWriters) {
                 CatalogSnapshot.Segment newSegment = new CatalogSnapshot.Segment(dataFormatWriter.getWriterGeneration());
