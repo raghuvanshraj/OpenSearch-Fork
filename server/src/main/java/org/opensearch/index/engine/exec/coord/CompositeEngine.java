@@ -169,6 +169,7 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
         new HashMap<>();
     private final MergeScheduler mergeScheduler;
     private final MergeHandler mergeHandler;
+    private final SoftDeletesPolicy softDeletesPolicy;
 
     @Nullable
     protected final String historyUUID;
@@ -414,6 +415,12 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
                 }
             }
         }
+        try {
+            softDeletesPolicy = newSoftDeletesPolicy();
+        } catch (IOException e) {
+            logger.error("failed to create softDeletesPolicy", e);
+            throw new EngineCreationFailureException(shardId, "failed to create composite engine", e);
+        }
         logger.trace("created new CompositeEngine");
     }
 
@@ -551,6 +558,16 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
     }
 
     public Engine.IndexResult index(Engine.Index index) throws IOException {
+        if (index.origin().equals(Engine.Operation.Origin.REPLICA)) {
+            ensureOpen();
+            Engine.IndexResult indexResult = new Engine.IndexResult(index.version(), index.primaryTerm(), index.seqNo(), false);
+            final Translog.Location location = translogManager.add(new Translog.Index(index, indexResult));
+            indexResult.setTranslogLocation(location);
+            indexResult.setTook(System.nanoTime() - index.startTime());
+            indexResult.freeze();
+            localCheckpointTracker.advanceMaxSeqNo(index.seqNo());
+            return indexResult;
+        }
         assert Objects.equals(index.uid().field(), IdFieldMapper.NAME) : index.uid().field();
         final boolean doThrottle = index.origin().isRecovery() == false;
         try (ReleasableLock releasableLock = readLock.acquire()) {
@@ -1169,7 +1186,7 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
 
     @Override
     public Closeable acquireHistoryRetentionLock() {
-        return null;
+        return softDeletesPolicy.acquireRetentionLock();
     }
 
     @Override
@@ -1393,5 +1410,21 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
             // This change is added as safety check to ensure that our checkpoint values are consistent at all times.
             pendingCheckpoint.updateAndGet(curr -> Math.max(curr, checkpoint));
         }
+    }
+
+    private SoftDeletesPolicy newSoftDeletesPolicy() throws IOException {
+        final Map<String, String> commitUserData = store.readLastCommittedSegmentsInfo().userData;
+        final long lastMinRetainedSeqNo;
+        if (commitUserData.containsKey(Engine.MIN_RETAINED_SEQNO)) {
+            lastMinRetainedSeqNo = Long.parseLong(commitUserData.get(Engine.MIN_RETAINED_SEQNO));
+        } else {
+            lastMinRetainedSeqNo = Long.parseLong(commitUserData.get(SequenceNumbers.MAX_SEQ_NO)) + 1;
+        }
+        return new SoftDeletesPolicy(
+            translogManager::getLastSyncedGlobalCheckpoint,
+            lastMinRetainedSeqNo,
+            engineConfig.getIndexSettings().getSoftDeleteRetentionOperations(),
+            engineConfig.retentionLeasesSupplier()
+        );
     }
 }

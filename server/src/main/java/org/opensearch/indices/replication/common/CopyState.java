@@ -13,6 +13,9 @@ import org.apache.lucene.store.ByteBuffersDataOutput;
 import org.apache.lucene.store.ByteBuffersIndexOutput;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.concurrent.GatedCloseable;
+import org.opensearch.index.engine.exec.coord.CatalogSnapshot;
+import org.opensearch.index.engine.exec.coord.CompositeEngine;
+import org.opensearch.index.engine.exec.coord.CompositeEngineCatalogSnapshot;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.index.store.StoreFileMetadata;
 import org.opensearch.indices.replication.checkpoint.ReplicationCheckpoint;
@@ -20,6 +23,7 @@ import org.opensearch.indices.replication.checkpoint.ReplicationCheckpoint;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -43,6 +47,22 @@ public class CopyState implements Closeable {
         this.segmentInfosRef = latestSegmentInfosAndCheckpoint.v1();
         this.replicationCheckpoint = latestSegmentInfosAndCheckpoint.v2();
         SegmentInfos segmentInfos = this.segmentInfosRef.get();
+
+        // For optimized indices, add catalog snapshot to userData before serialization
+        if (shard.indexSettings().isOptimizedIndex()) {
+            try (CompositeEngine.ReleasableRef<CatalogSnapshot> catalogSnapshotRef = shard.getCatalogSnapshotFromEngine()) {
+                CatalogSnapshot catalogSnapshot = catalogSnapshotRef.getRef();
+                if (catalogSnapshot instanceof CompositeEngineCatalogSnapshot) {
+                    Map<String, String> userData = new HashMap<>(segmentInfos.getUserData());
+                    userData.put(CompositeEngineCatalogSnapshot.CATALOG_SNAPSHOT_KEY, catalogSnapshot.serializeToString());
+                    segmentInfos = segmentInfos.clone();
+                    segmentInfos.setUserData(userData, false);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+
         ByteBuffersDataOutput buffer = new ByteBuffersDataOutput();
         // resource description and name are not used, but resource description cannot be null
         try (ByteBuffersIndexOutput indexOutput = new ByteBuffersIndexOutput(buffer, "", null)) {

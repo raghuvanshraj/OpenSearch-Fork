@@ -51,7 +51,7 @@ import java.util.function.Supplier;
  *
  * @opensearch.internal
  */
-final class SoftDeletesPolicy {
+public final class SoftDeletesPolicy {
     private final LongSupplier globalCheckpointSupplier;
     private long localCheckpointOfSafeCommit;
     // This lock count is used to prevent `minRetainedSeqNo` from advancing.
@@ -63,7 +63,7 @@ final class SoftDeletesPolicy {
     // provides the retention leases used to calculate the minimum sequence number to retain
     private final Supplier<RetentionLeases> retentionLeasesSupplier;
 
-    SoftDeletesPolicy(
+    public SoftDeletesPolicy(
         final LongSupplier globalCheckpointSupplier,
         final long minRetainedSeqNo,
         final long retentionOperations,
@@ -108,7 +108,7 @@ final class SoftDeletesPolicy {
      * make sure that all operations that are being retained will be retained until the lock is released.
      * This is a analogy to the translog's retention lock; see {@link Translog#acquireRetentionLock()}
      */
-    synchronized Releasable acquireRetentionLock() {
+    public synchronized Releasable acquireRetentionLock() {
         assert retentionLockCount >= 0 : "Invalid number of retention locks [" + retentionLockCount + "]";
         retentionLockCount++;
         final AtomicBoolean released = new AtomicBoolean();
