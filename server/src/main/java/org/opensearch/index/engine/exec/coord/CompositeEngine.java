@@ -1150,7 +1150,7 @@ public class CompositeEngine implements LifecycleAware, Closeable, Indexer, Chec
 
     @Override
     public MergeStats getMergeStats() {
-        return null;
+        return mergeScheduler.stats();
     }
 
     @Override

@@ -100,7 +100,7 @@ public class DatafusionEngine extends SearchExecEngine<DatafusionContext, Datafu
     public DatafusionEngine(DataFormat dataFormat, Collection<FileMetadata> formatCatalogSnapshot, DataFusionService dataFusionService, ShardPath shardPath) throws IOException {
         this.dataFormat = dataFormat;
         this.datafusionReaderManager = new DatafusionReaderManager(
-            shardPath.getDataPath().resolve(dataFormat.getName()).toString(), formatCatalogSnapshot, dataFormat.getName(), dataFusionService
+            shardPath.getDataPath().resolve(dataFormat.getName()).toString(), formatCatalogSnapshot, dataFormat.getName()
         );
         this.datafusionService = dataFusionService;
         this.cacheManager = datafusionService.getCacheManager();
