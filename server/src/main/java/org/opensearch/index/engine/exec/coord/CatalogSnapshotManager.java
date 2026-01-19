@@ -8,6 +8,8 @@
 
 package org.opensearch.index.engine.exec.coord;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.opensearch.index.engine.exec.coord.Segment;
 
 import org.opensearch.index.engine.exec.DataFormat;
@@ -32,6 +34,8 @@ import static org.opensearch.index.engine.exec.coord.CatalogSnapshot.CATALOG_SNA
 
 public class CatalogSnapshotManager {
 
+    private static final Logger logger = LogManager.getLogger(CatalogSnapshotManager.class);
+
     private CompositeEngineCatalogSnapshot latestCatalogSnapshot;
     private final Committer compositeEngineCommitter;
     private final Map<Long, CompositeEngineCatalogSnapshot> catalogSnapshotMap;
@@ -41,11 +45,15 @@ public class CatalogSnapshotManager {
         catalogSnapshotMap = new HashMap<>();
         this.compositeEngineCommitter = compositeEngineCommitter;
         indexFileDeleter = new AtomicReference<>();
-        getLastCommittedCatalogSnapshot().ifPresent(lastCommittedCatalogSnapshot -> {
+
+        Optional<CompositeEngineCatalogSnapshot> lastCommittedOpt = getLastCommittedCatalogSnapshot();
+
+        lastCommittedOpt.ifPresent(lastCommittedCatalogSnapshot -> {
             latestCatalogSnapshot = lastCommittedCatalogSnapshot;
             catalogSnapshotMap.put(latestCatalogSnapshot.getId(), latestCatalogSnapshot);
             latestCatalogSnapshot.remapPaths(shardPath.getDataPath());
         });
+
         indexFileDeleter.set(new IndexFileDeleter(compositeEngine, latestCatalogSnapshot, shardPath));
         if(latestCatalogSnapshot != null) {
             latestCatalogSnapshot.setIndexFileDeleterSupplier(indexFileDeleter::get);
@@ -74,16 +82,24 @@ public class CatalogSnapshotManager {
                 latestCatalogSnapshot.getVersion() + 1,
                 refreshResult.getRefreshedSegments(),
                 catalogSnapshotMap,
-                indexFileDeleter::get)
+                indexFileDeleter::get
+            )
         );
     }
 
     public synchronized void applyReplicationChanges(CatalogSnapshot catalogSnapshot, ShardPath shardPath) {
         CompositeEngineCatalogSnapshot oldSnapshot = latestCatalogSnapshot;
         if (catalogSnapshot != null) {
-            catalogSnapshot.incRef();
             catalogSnapshot.remapPaths(shardPath.getDataPath());
-            latestCatalogSnapshot = (CompositeEngineCatalogSnapshot) catalogSnapshot;
+
+            CompositeEngineCatalogSnapshot newSnapshot = (CompositeEngineCatalogSnapshot) catalogSnapshot;
+
+            newSnapshot.setIndexFileDeleterSupplier(indexFileDeleter::get);
+            newSnapshot.setCatalogSnapshotMap(catalogSnapshotMap);
+
+            indexFileDeleter.get().addFileReferences(newSnapshot);
+
+            latestCatalogSnapshot = newSnapshot;
             catalogSnapshotMap.put(latestCatalogSnapshot.getId(), latestCatalogSnapshot);
         }
         if (oldSnapshot != null) {
@@ -93,7 +109,7 @@ public class CatalogSnapshotManager {
 
     public synchronized void applyMergeResults(MergeResult mergeResult, OneMerge oneMerge) {
 
-        List<Segment> segmentList = latestCatalogSnapshot.getSegments();
+        List<Segment> segmentList = new ArrayList<>(latestCatalogSnapshot.getSegments());
 
         Segment segmentToAdd = getSegment(mergeResult.getMergedWriterFileSet());
         Set<Segment> segmentsToRemove = new HashSet<>(oneMerge.getSegmentsToMerge());
@@ -152,9 +168,13 @@ public class CatalogSnapshotManager {
 
     private Optional<CompositeEngineCatalogSnapshot> getLastCommittedCatalogSnapshot() throws IOException {
         Map<String, String> lastCommittedData = compositeEngineCommitter.getLastCommittedData();
+
         if (lastCommittedData.containsKey(CATALOG_SNAPSHOT_KEY)) {
-            return Optional.of(CompositeEngineCatalogSnapshot.deserializeFromString(lastCommittedData.get(CATALOG_SNAPSHOT_KEY)));
+            String serializedSnapshot = lastCommittedData.get(CATALOG_SNAPSHOT_KEY);
+            CompositeEngineCatalogSnapshot snapshot = CompositeEngineCatalogSnapshot.deserializeFromString(serializedSnapshot);
+            return Optional.of(snapshot);
         }
+
         return Optional.empty();
     }
 

@@ -98,9 +98,6 @@ import org.opensearch.core.index.AppendOnlyIndexOperationRetryException;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.VersionType;
-import org.opensearch.index.engine.exec.coord.CatalogSnapshot;
-import org.opensearch.index.engine.exec.coord.CompositeEngine;
-import org.opensearch.index.engine.exec.coord.SegmentInfosCatalogSnapshot;
 import org.opensearch.index.engine.exec.coord.LastRefreshedCheckpointListener;
 import org.opensearch.index.fieldvisitor.IdOnlyFieldVisitor;
 import org.opensearch.index.mapper.IdFieldMapper;
@@ -560,9 +557,10 @@ public class InternalEngine extends Engine {
                 // we can access segment_stats while a shard is still in the recovering state.
                 case "segments":
                 case "segments_stats":
+                case "completion_stats":
                     break;
                 default:
-//                    assert externalReaderManager.isWarmedUp : "searcher was not warmed up yet for source[" + source + "]";
+                   // assert externalReaderManager.isWarmedUp : "searcher was not warmed up yet for source[" + source + "]";
             }
         }
         return true;
