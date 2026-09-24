@@ -21,7 +21,12 @@ arrow-array = "=58.3.0"
 arrow-ipc = "=58.3.0"
 arrow-schema = "=58.3.0"
 arrow-buffer = "=58.3.0"
-parquet = "=58.3.0"
+# variant_experimental: enables the Arrow extension type <-> VARIANT logical type mapping in
+# ArrowWriter/ArrowReader (arrow/schema/extension.rs) and pulls in parquet-variant,
+# parquet-variant-compute and parquet-variant-json at ^58.3.0. Required for the `variant` field
+# type (see workspace/mustang/variant/variant-design-doc.md, decision D-12). Tracked upstream
+# for stabilisation at apache/arrow-rs#10546.
+parquet = { version = "=58.3.0", features = ["variant_experimental"] }
 
 # DataFusion
 datafusion = "=54.0.0"
