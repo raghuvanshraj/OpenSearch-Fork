@@ -171,6 +171,10 @@ fn load_segment(tmp: &NamedTempFile) -> (SegmentFileInfo, SchemaRef) {
 
 // ── Expressions ─────────────────────────────────────────────────────
 
+fn col_expr(schema: &Schema, name: &str) -> Arc<dyn PhysicalExpr> {
+    col(schema, name)
+}
+
 fn col(schema: &Schema, name: &str) -> Arc<dyn PhysicalExpr> {
     Arc::new(PhysColumn::new(name, schema.index_of(name).unwrap()))
 }
@@ -727,4 +731,118 @@ async fn shredded_variant_get_predicate_end_to_end_is_exact() {
     assert_eq!(ids, brute, "indexed-table results must equal brute force (fallback row as Int64 = {fallback_as_i64:?})");
     assert_eq!(rg_keep, vec![true, true, true, true]);
     assert_eq!(get_counter(&aggregate_metrics(&plan), "pages_pruned"), 0);
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// POC-4 interop helpers (ignored; driven by env vars from the shell)
+// ═════════════════════════════════════════════════════════════════════
+
+/// `VARIANT_POC_OUT=/path/out.parquet cargo test ... export_shredded_fixture -- --ignored`
+#[test]
+#[ignore]
+fn export_shredded_fixture() {
+    let out = std::env::var("VARIANT_POC_OUT").expect("VARIANT_POC_OUT");
+    let (tmp, _) = write_fixture(true);
+    std::fs::copy(tmp.path(), &out).unwrap();
+    eprintln!("wrote shredded fixture to {out}");
+}
+
+/// `VARIANT_POC_IN=/path/in.parquet VARIANT_POC_PATH=x cargo test ... read_external_variant_file -- --ignored --nocapture`
+///
+/// Reads a Variant file written by another engine through the same reader path the indexed
+/// table uses (`ArrowReaderMetadata` footer schema, `ParquetRecordBatchReader`), then runs the
+/// `variant_get` UDF (untyped: JSON text) and `variant_to_json` on it. Prints the footer field,
+/// the shredding state, and the first rows.
+#[test]
+#[ignore]
+fn read_external_variant_file() {
+    use datafusion::parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    let input = std::env::var("VARIANT_POC_IN").expect("VARIANT_POC_IN");
+    let path = std::env::var("VARIANT_POC_PATH").unwrap_or_else(|_| "x".to_string());
+    let col_name = std::env::var("VARIANT_POC_COL").unwrap_or_else(|_| "v".to_string());
+    let file = std::fs::File::open(&input).unwrap();
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+    let schema = builder.schema().clone();
+    let field = schema.field_with_name(&col_name).unwrap().clone();
+    eprintln!("footer field: {field:?}");
+    let reader = builder.with_batch_size(4096).build().unwrap();
+    let mut rows = 0usize;
+    for batch in reader {
+        let batch = batch.unwrap();
+        let col = batch.column_by_name(&col_name).unwrap();
+        let va =
+            parquet::variant::VariantArray::try_new(col.as_ref()).expect("VariantArray::try_new");
+        eprintln!(
+            "batch rows={} typed_value present={} value present={}",
+            batch.num_rows(),
+            va.typed_value_field().is_some(),
+            va.value_field().is_some()
+        );
+        match parquet::variant::variant_to_json(col) {
+            Ok(json) => eprintln!("variant_to_json direct: ok, row0 = {}", json.value(0)),
+            Err(e) => eprintln!("variant_to_json direct: ERR {e}"),
+        }
+        match parquet::variant::unshred_variant(&va) {
+            Ok(unshredded) => {
+                let inner: ArrayRef = Arc::new(unshredded.into_inner());
+                match parquet::variant::variant_to_json(&inner) {
+                    Ok(json) => {
+                        for i in 0..batch.num_rows().min(5) {
+                            eprintln!("unshred+to_json row {i}: {}", json.value(i));
+                        }
+                    }
+                    Err(e) => eprintln!("unshred_variant ok but to_json ERR {e}"),
+                }
+            }
+            Err(e) => eprintln!("unshred_variant: ERR {e}"),
+        }
+        for ty in ["Int64", "Utf8"] {
+            match variant_get(&schema, &path, ty).evaluate(&batch) {
+                Ok(cv) => {
+                    let arr = cv.into_array(batch.num_rows()).unwrap();
+                    let vals: Vec<String> = (0..batch.num_rows().min(8))
+                        .map(|i| {
+                            if arr.is_null(i) {
+                                "NULL".to_string()
+                            } else {
+                                datafusion::common::ScalarValue::try_from_array(&arr, i)
+                                    .unwrap()
+                                    .to_string()
+                            }
+                        })
+                        .collect();
+                    eprintln!("variant_get({path}, {ty}) = {vals:?}");
+                }
+                Err(e) => eprintln!("variant_get({path}, {ty}) ERR {e}"),
+            }
+        }
+        // untyped: JSON text through the UDF
+        let udf = Arc::new(ScalarUDF::from(VariantGetUdf::new()));
+        let untyped = ScalarFunctionExpr::try_new(
+            udf,
+            vec![col_expr(&schema, &col_name), lit_str(&path)],
+            &schema,
+            Arc::new(ConfigOptions::default()),
+        )
+        .unwrap();
+        match untyped.evaluate(&batch) {
+            Ok(cv) => {
+                let arr = cv.into_array(batch.num_rows()).unwrap();
+                let arr = arr.as_any().downcast_ref::<StringArray>().unwrap();
+                let vals: Vec<Option<&str>> = (0..batch.num_rows().min(8))
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            None
+                        } else {
+                            Some(arr.value(i))
+                        }
+                    })
+                    .collect();
+                eprintln!("variant_get({path}) untyped json = {vals:?}");
+            }
+            Err(e) => eprintln!("variant_get({path}) untyped ERR {e}"),
+        }
+        rows += batch.num_rows();
+    }
+    eprintln!("total rows {rows}");
 }
