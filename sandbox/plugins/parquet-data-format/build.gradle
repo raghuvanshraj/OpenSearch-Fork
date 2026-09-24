@@ -51,6 +51,13 @@ dependencies {
     exclude group: 'com.fasterxml.jackson.core', module: 'jackson-annotations'
   }
   implementation "com.fasterxml.jackson.core:jackson-annotations:${versions.jackson_annotations}"
+
+  // Variant binary encoder (VariantBuilder & co). Only the encoder classes are used; the
+  // parquet-column/parquet-common deps are needed solely by VariantConverters/VariantValueWriter
+  // (parquet-java's own read/write bridge), which we never touch -- arrow-rs writes the file.
+  implementation("org.apache.parquet:parquet-variant:${versions.parquet_variant}") {
+    transitive = false
+  }
 }
 
 tasks.named("dependencyLicenses").configure {
@@ -66,7 +73,28 @@ tasks.named('thirdPartyAudit').configure {
     'org.apache.log4j.Level',
     'org.apache.log4j.Logger',
     'reactor.blockhound.BlockHound$Builder',
-    'reactor.blockhound.integration.BlockHoundIntegration'
+    'reactor.blockhound.integration.BlockHoundIntegration',
+    // parquet-variant is pulled with transitive=false: these are referenced only by
+    // VariantConverters/VariantValueWriter (parquet-java read/write bridge), never by the
+    // encoder classes we use. Same treatment arrow-flight-rpc gives parquet-arrow.
+    'org.apache.parquet.Preconditions',
+    'org.apache.parquet.column.Dictionary',
+    'org.apache.parquet.io.api.Binary',
+    'org.apache.parquet.io.api.Converter',
+    'org.apache.parquet.io.api.GroupConverter',
+    'org.apache.parquet.io.api.PrimitiveConverter',
+    'org.apache.parquet.io.api.RecordConsumer',
+    'org.apache.parquet.schema.GroupType',
+    'org.apache.parquet.schema.LogicalTypeAnnotation',
+    'org.apache.parquet.schema.LogicalTypeAnnotation$DecimalLogicalTypeAnnotation',
+    'org.apache.parquet.schema.LogicalTypeAnnotation$IntLogicalTypeAnnotation',
+    'org.apache.parquet.schema.LogicalTypeAnnotation$TimeLogicalTypeAnnotation',
+    'org.apache.parquet.schema.LogicalTypeAnnotation$TimeUnit',
+    'org.apache.parquet.schema.LogicalTypeAnnotation$TimestampLogicalTypeAnnotation',
+    'org.apache.parquet.schema.PrimitiveType',
+    'org.apache.parquet.schema.PrimitiveType$PrimitiveTypeName',
+    'org.apache.parquet.schema.Type',
+    'org.apache.parquet.schema.Type$Repetition'
   )
   ignoreViolations(
     'org.apache.arrow.memory.util.MemoryUtil',

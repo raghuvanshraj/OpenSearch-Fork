@@ -104,6 +104,8 @@ opentelemetrysemconv  = "1.43.0"
 # arrow dependencies
 arrow                 = "18.1.0"
 flatbuffers           = "2.0.0"
+# parquet-java Variant binary encoder (VariantBuilder); the Parquet file itself is written by arrow-rs.
+parquet_variant       = "1.17.1"
 
 # calcite is locally patched and published to OpenSearch maven snapshots; see .github/workflows/calcite-snapshots.yml.
 # Published as org.apache.calcite:calcite-core:${calcite}-opensearch-${calcite_os_rev}.
