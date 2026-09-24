@@ -165,6 +165,7 @@ pub mod str_to_date;
 pub mod strftime;
 pub mod time_format;
 pub mod width_bucket;
+pub mod variant_get;
 
 // Dev note: if a freshly added UDF here fails at runtime with
 // "Unsupported function name: <X>" despite the Java side being wired, the
@@ -229,6 +230,7 @@ pub fn register_all(ctx: &SessionContext) {
     log::info!(
         "OpenSearch UDF register_all: convert_tz, conversion(numeric_conversion: num/auto/memk/rmcomma/rmunit/dur2sec/mstime, time_conversion: ctime/mktime), crc32, date_format, opensearch_extract, from_unixtime, item, json, json_append, json_array, json_array_length, json_delete, json_extend, json_extract, json_extract_all, json_keys, json_object, json_set, makedate, maketime, minspan_bucket, mvappend, mvfind, mvzip, parse, range_bucket, rex_extract, rex_extract_multi, rex_offset, sha1, span_bucket, str_to_date, strftime, time_format, width_bucket registered"
     );
+    variant_get::register_all(ctx);
 }
 
 #[cfg(test)]

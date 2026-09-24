@@ -62,6 +62,10 @@ pub struct PagePruner {
     /// Per-segment arrow schema derived from parquet footer, used for
     /// positional column resolution in statistics-based pruning.
     seg_arrow_schema: SchemaRef,
+    /// Flat view over nested parquet leaves (shredded Variant `typed_value` / `value`),
+    /// so dotted leaf paths in a pruning predicate can be served with statistics.
+    /// `None` when the file has no nested leaves. See [`super::nested_leaf`].
+    flat_leaves: Option<super::nested_leaf::FlatLeafView>,
 }
 
 impl PagePruner {
@@ -70,10 +74,15 @@ impl PagePruner {
         metadata: Arc<ParquetMetaData>,
         seg_arrow_schema: SchemaRef,
     ) -> Self {
+        let flat_leaves = super::nested_leaf::FlatLeafView::build(
+            &seg_arrow_schema,
+            metadata.file_metadata().schema_descr(),
+        );
         Self {
             schema: schema.clone(),
             metadata,
             seg_arrow_schema,
+            flat_leaves,
         }
     }
 
@@ -130,10 +139,20 @@ impl PagePruner {
         let seg_arrow_schema = Arc::clone(&self.seg_arrow_schema);
 
         for col in &columns {
-            let converter = match StatisticsConverter::try_new(col.name(), &seg_arrow_schema, descr)
-            {
-                Ok(c) => c,
-                Err(_) => {
+            let top_level = StatisticsConverter::try_new(col.name(), &seg_arrow_schema, descr);
+            let nested = match &top_level {
+                Ok(_) => None,
+                // Not a top-level column: try the flat nested-leaf view (dotted path).
+                Err(_) if super::nested_leaf::FlatLeafView::is_candidate(col.name()) => self
+                    .flat_leaves
+                    .as_ref()
+                    .and_then(|v| v.converter(col.name())),
+                Err(_) => None,
+            };
+            let converter = match (top_level, nested) {
+                (Ok(c), _) => c,
+                (Err(_), Some(c)) => c,
+                (Err(_), None) => {
                     // Column not in Arrow schema either — nothing we can
                     // do. Treat as absent (fills with nulls).
                     col_converters.push((col, None));
@@ -559,13 +578,26 @@ fn eval_leaf(
         return vec![true; num];
     }
     let mut col_stats: HashMap<String, (ArrayRef, ArrayRef, Option<ArrayRef>)> = HashMap::new();
+    // Built lazily: only predicates on nested leaves (dotted names) need it.
+    let flat_leaves = if columns.iter().any(|c| {
+        arrow_schema.index_of(c.name()).is_err()
+            && super::nested_leaf::FlatLeafView::is_candidate(c.name())
+    }) {
+        super::nested_leaf::FlatLeafView::build(arrow_schema, descr)
+    } else {
+        None
+    };
     for col in &columns {
-        if arrow_schema.index_of(col.name()).is_err() {
-            continue;
-        }
-        let converter = match StatisticsConverter::try_new(col.name(), arrow_schema, descr) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let converter = if arrow_schema.index_of(col.name()).is_ok() {
+            match StatisticsConverter::try_new(col.name(), arrow_schema, descr) {
+                Ok(c) => c,
+                Err(_) => continue,
+            }
+        } else {
+            match flat_leaves.as_ref().and_then(|v| v.converter(col.name())) {
+                Some(c) => c,
+                None => continue,
+            }
         };
         let min_arr = match converter.row_group_mins(rg_metas.iter().copied()) {
             Ok(arr) => arr,

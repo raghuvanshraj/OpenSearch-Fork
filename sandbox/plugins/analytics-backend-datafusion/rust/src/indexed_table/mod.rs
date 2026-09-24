@@ -61,6 +61,7 @@ pub mod eval;
 pub mod ffm_callbacks;
 pub mod index;
 pub mod metrics;
+pub mod nested_leaf;
 pub mod page_pruner;
 pub mod parquet_bridge;
 pub mod partitioning;
