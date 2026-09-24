@@ -28,6 +28,77 @@ use crate::writer_properties_builder::WriterPropertiesBuilder;
 use crate::{log_debug, log_error, log_info};
 use native_bridge_common::memory_pool::{MemoryReservation, PoolBehavior};
 
+/// Write-side guard for Variant columns (design decision D-17).
+///
+/// arrow-rs's `VariantType::supports_data_type` only checks that a tagged field is a struct, so
+/// the `ArrowWriter` would annotate any tagged struct as `VARIANT` and readers
+/// (`VariantArray::try_new`) would reject the file later, after the segment is on disk. This
+/// applies the reader's shape rules at writer creation: a `metadata` child of a binary type,
+/// optional `value` / `typed_value` children (at least one present), nothing else.
+fn validate_variant_fields(schema: &arrow::datatypes::Schema) -> Result<(), String> {
+    use arrow::datatypes::DataType;
+    use parquet::variant::VariantType;
+
+    fn is_binary(dt: &DataType) -> bool {
+        matches!(
+            dt,
+            DataType::Binary | DataType::LargeBinary | DataType::BinaryView
+        )
+    }
+
+    for field in schema.fields() {
+        if field.try_extension_type::<VariantType>().is_err() {
+            continue;
+        }
+        let name = field.name();
+        let DataType::Struct(children) = field.data_type() else {
+            return Err(format!(
+                "Variant field '{}' must be a Struct, got {}",
+                name,
+                field.data_type()
+            ));
+        };
+        let metadata = children
+            .iter()
+            .find(|c| c.name() == "metadata")
+            .ok_or_else(|| format!("Variant field '{}' is missing 'metadata' child", name))?;
+        if !is_binary(metadata.data_type()) {
+            return Err(format!(
+                "Variant field '{}' child 'metadata' must be binary, got {}",
+                name,
+                metadata.data_type()
+            ));
+        }
+        let value = children.iter().find(|c| c.name() == "value");
+        if let Some(v) = value {
+            if !is_binary(v.data_type()) {
+                return Err(format!(
+                    "Variant field '{}' child 'value' must be binary, got {}",
+                    name,
+                    v.data_type()
+                ));
+            }
+        }
+        let typed_value = children.iter().find(|c| c.name() == "typed_value");
+        if value.is_none() && typed_value.is_none() {
+            return Err(format!(
+                "Variant field '{}' must have a 'value' and/or 'typed_value' child",
+                name
+            ));
+        }
+        for c in children.iter() {
+            if !matches!(c.name().as_str(), "metadata" | "value" | "typed_value") {
+                return Err(format!(
+                    "Variant field '{}' has unexpected child '{}'",
+                    name,
+                    c.name()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Result from finalizing a writer: Parquet metadata + whole-file CRC32 + optional sort permutation.
 #[derive(Debug)]
 pub struct FinalizeResult {
@@ -459,6 +530,7 @@ impl NativeParquetWriter {
         let arrow_schema = unsafe { FFI_ArrowSchema::from_raw(schema_address as *mut _) };
         let schema = Arc::new(arrow::datatypes::Schema::try_from(&arrow_schema)?);
         log_debug!("Schema created with {} fields", schema.fields().len());
+        validate_variant_fields(&schema)?;
 
         let mut settings: NativeSettings = SETTINGS_STORE
             .get(&index_name)

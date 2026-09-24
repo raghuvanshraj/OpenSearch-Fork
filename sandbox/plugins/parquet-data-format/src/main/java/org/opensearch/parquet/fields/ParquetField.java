@@ -87,7 +87,7 @@ public abstract class ParquetField {
      */
     public final Field toArrowField(String name, boolean multiValue) {
         if (multiValue == false) {
-            return new Field(name, getFieldType(), null);
+            return new Field(name, getFieldType(), getChildFields());
         }
         if (supportsMultiValue() == false) {
             throw new IllegalArgumentException(
@@ -163,4 +163,15 @@ public abstract class ParquetField {
 
     /** Returns the Arrow field type with nullability metadata. */
     public abstract FieldType getFieldType();
+
+    /**
+     * Returns the child fields of this column when its Arrow type is nested (e.g. a Struct), or
+     * {@code null} for scalar columns. Only consulted for the single-value shape of
+     * {@link #toArrowField}.
+     *
+     * @return child fields, or null
+     */
+    protected List<Field> getChildFields() {
+        return null;
+    }
 }

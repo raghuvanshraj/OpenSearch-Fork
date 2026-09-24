@@ -885,6 +885,21 @@ pub unsafe extern "C" fn parquet_read_as_json(
                                 .unwrap();
                             serde_json::json!(arr.value(row_idx))
                         }
+                        // Variant extension type: the reader re-attaches the extension tag from the
+                        // VARIANT logical type, VariantArray::try_new validates the child shape, and
+                        // variant_to_json decodes. A struct that is NOT recognised as Variant falls
+                        // through to <unsupported:...>, which the Java tests treat as a failure.
+                        arrow::datatypes::DataType::Struct(_)
+                            if field
+                                .try_extension_type::<parquet::variant::VariantType>()
+                                .is_ok() =>
+                        {
+                            let json = parquet::variant::variant_to_json(col)
+                                .map_err(|e| format!("variant_to_json failed: {}", e))?;
+                            serde_json::from_str(json.value(row_idx)).unwrap_or_else(|_| {
+                                serde_json::Value::String(json.value(row_idx).to_string())
+                            })
+                        }
                         _ => {
                             serde_json::Value::String(format!("<unsupported:{}>", col.data_type()))
                         }

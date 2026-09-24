@@ -33,6 +33,7 @@ import org.opensearch.parquet.fields.core.data.number.UnsignedLongParquetField;
 import org.opensearch.parquet.fields.core.data.text.IpParquetField;
 import org.opensearch.parquet.fields.core.data.text.KeywordParquetField;
 import org.opensearch.parquet.fields.core.data.text.TextParquetField;
+import org.opensearch.parquet.fields.core.data.variant.VariantParquetField;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -87,5 +88,7 @@ public class CoreDataFieldPlugin implements ParquetFieldPlugin {
 
     private static void registerBinaryFields(Map<String, ParquetField> fieldMap) {
         fieldMap.put(BinaryFieldMapper.CONTENT_TYPE, new BinaryParquetField());
+        // No server-side VariantFieldMapper yet (POC); content type is the planned mapper name.
+        fieldMap.put(VariantParquetField.CONTENT_TYPE, new VariantParquetField());
     }
 }
