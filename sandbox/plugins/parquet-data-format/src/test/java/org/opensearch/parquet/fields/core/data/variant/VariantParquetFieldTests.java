@@ -25,11 +25,14 @@ import org.apache.parquet.variant.Variant;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.index.mapper.BinaryFieldMapper;
+import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.nativebridge.spi.ArrowExport;
 import org.opensearch.parquet.bridge.NativeParquetWriter;
 import org.opensearch.parquet.bridge.ParquetSortConfig;
 import org.opensearch.parquet.bridge.RustBridge;
 import org.opensearch.parquet.fields.core.data.variant.VariantParquetField.VariantBytes;
+import org.opensearch.parquet.vsr.ManagedVSR;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
@@ -223,6 +226,42 @@ public class VariantParquetFieldTests extends OpenSearchTestCase {
         }
         assertFalse(writer.isInitialized());
         assertFalse("no file may be produced for a rejected schema", Files.exists(file));
+    }
+
+    // ---- ManagedVSR: metadata and children must survive the production VSR path ----
+
+    public void testExtensionMetadataSurvivesManagedVsrAndSchemaReconcile() throws Exception {
+        VariantParquetField field = new VariantParquetField();
+        MappedFieldType ft = new BinaryFieldMapper.BinaryFieldType("v"); // any MappedFieldType named "v"
+        Schema initial = new Schema(List.of(new Field("id", FieldType.nullable(new ArrowType.Int(32, true)), null)));
+        BufferAllocator child = allocator.newChildAllocator("variant-vsr", 0, Long.MAX_VALUE);
+        ManagedVSR vsr = new ManagedVSR("variant-vsr", initial, child);
+        try {
+            // Path taken by VSRManager.reconcileSchema for a field first seen mid-flight.
+            vsr.addFieldVector(field.toArrowField("v", false));
+            ((VarBinaryVector) ((StructVector) vsr.getVector("v")).getChild("metadata")).allocateNew(64, 2);
+            ((VarBinaryVector) ((StructVector) vsr.getVector("v")).getChild("value")).allocateNew(64, 2);
+            field.createField(ft, vsr, encode(DOC_1));
+            vsr.setRowCount(1);
+            field.createField(ft, vsr, null);
+            vsr.setRowCount(2);
+
+            // Schema rebuilt from live vectors (what VSRPool.updateSchema and export use).
+            Field live = vsr.getSchema().findField("v");
+            VariantParquetField.validateShape(live);
+
+            // Across the C Data Interface export, exactly as the native writer receives it.
+            vsr.moveToFrozen();
+            // importSchema consumes (releases) the exported handle, so do not close it again.
+            Schema imported = Data.importSchema(allocator, vsr.exportSchema(), null);
+            VariantParquetField.validateShape(imported.findField("v"));
+            assertEquals("", imported.findField("v").getMetadata().get(VariantParquetField.EXTENSION_METADATA_KEY));
+            try (ArrowExport export = vsr.exportToArrow()) {
+                assertTrue(export.getSchemaAddress() != 0L && export.getArrayAddress() != 0L);
+            }
+        } finally {
+            vsr.close();
+        }
     }
 
     // ---- helpers ----
