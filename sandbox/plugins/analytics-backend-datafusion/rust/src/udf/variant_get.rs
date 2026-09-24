@@ -37,9 +37,39 @@ use datafusion::logical_expr::{
     ColumnarValue, ExpressionPlacement, ReturnFieldArgs, ScalarFunctionArgs, ScalarUDF,
     ScalarUDFImpl, Signature, TypeSignature, Volatility,
 };
-use parquet::variant::{variant_get, variant_to_json, GetOptions, VariantPath, VariantType};
+use parquet::variant::{
+    unshred_variant, variant_get, variant_to_json, GetOptions, VariantArray, VariantPath,
+    VariantType,
+};
 
 pub const NAME: &str = "variant_get";
+
+/// Serialise a Variant array to JSON text.
+///
+/// `parquet_variant_compute::variant_to_json` at 58.3.0 only accepts the unshredded layout with
+/// `Binary` (not `BinaryView`) children, while the kernels return `BinaryView` and shredded
+/// results carry `typed_value`. Normalise first: unshred if needed, then cast children to
+/// `Binary`. Both steps are no-ops on the common read-from-parquet layout.
+pub fn variant_to_json_text(arr: &ArrayRef) -> Result<datafusion::arrow::array::StringArray> {
+    let mut va = VariantArray::try_new(arr.as_ref())?;
+    if va.typed_value_field().is_some() {
+        va = unshred_variant(&va)?;
+    }
+    let inner: ArrayRef = Arc::new(va.into_inner());
+    let canonical = DataType::Struct(
+        vec![
+            Arc::new(Field::new("metadata", DataType::Binary, false)),
+            Arc::new(Field::new("value", DataType::Binary, true)),
+        ]
+        .into(),
+    );
+    let inner = if inner.data_type() == &canonical {
+        inner
+    } else {
+        datafusion::arrow::compute::cast(&inner, &canonical)?
+    };
+    Ok(variant_to_json(&inner)?)
+}
 
 pub fn register_all(ctx: &SessionContext) {
     ctx.register_udf(ScalarUDF::from(VariantGetUdf::new()));
@@ -183,7 +213,7 @@ impl ScalarUDFImpl for VariantGetUdf {
             extracted
         } else {
             // v1 result contract: Variant-typed results become JSON text at the Rust boundary.
-            Arc::new(variant_to_json(&extracted)?)
+            Arc::new(variant_to_json_text(&extracted)?)
         };
         debug_assert_eq!(out.len(), num_rows);
         Ok(ColumnarValue::Array(out))
