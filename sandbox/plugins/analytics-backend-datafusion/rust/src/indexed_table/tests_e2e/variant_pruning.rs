@@ -35,8 +35,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use datafusion::arrow::array::{Array, ArrayRef, Int32Array, Int64Array, StringArray};
-use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::array::{Array, ArrayRef, Int32Array, Int64Array, StringArray, StructArray};
+use datafusion::arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
+use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::ScalarValue;
 use datafusion::config::ConfigOptions;
@@ -778,23 +779,57 @@ fn read_external_variant_file() {
             va.typed_value_field().is_some(),
             va.value_field().is_some()
         );
-        match parquet::variant::variant_to_json(col) {
-            Ok(json) => eprintln!("variant_to_json direct: ok, row0 = {}", json.value(0)),
-            Err(e) => eprintln!("variant_to_json direct: ERR {e}"),
-        }
-        match parquet::variant::unshred_variant(&va) {
-            Ok(unshredded) => {
-                let inner: ArrayRef = Arc::new(unshredded.into_inner());
-                match parquet::variant::variant_to_json(&inner) {
-                    Ok(json) => {
-                        for i in 0..batch.num_rows().min(5) {
-                            eprintln!("unshred+to_json row {i}: {}", json.value(i));
-                        }
-                    }
-                    Err(e) => eprintln!("unshred_variant ok but to_json ERR {e}"),
+        // arrow-rs 58.3.0 `variant_to_json` is POSITIONAL (column 0 = metadata, column 1 = value)
+        // while the spec allows any field order and Spark 4.1 writes `value, metadata`. Reorder
+        // by name first so the kernel sees what it expects; report the raw call too.
+        let by_name = |arr: &ArrayRef| -> Option<ArrayRef> {
+            let s = arr.as_any().downcast_ref::<StructArray>()?;
+            let m = s.column_by_name("metadata")?.clone();
+            let v = s.column_by_name("value")?.clone();
+            let cast = |a: ArrayRef| -> ArrayRef {
+                if a.data_type() == &DataType::Binary {
+                    a
+                } else {
+                    datafusion::arrow::compute::cast(&a, &DataType::Binary).unwrap()
                 }
+            };
+            let m = cast(m);
+            let v = cast(v);
+            let fields = Fields::from(vec![
+                Field::new("metadata", DataType::Binary, false),
+                Field::new("value", DataType::Binary, true),
+            ]);
+            Some(Arc::new(StructArray::new(fields, vec![m, v], s.nulls().cloned())) as ArrayRef)
+        };
+        let guarded = |label: &str, f: &dyn Fn() -> Result<StringArray, ArrowError>| {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+                Ok(Ok(json)) => {
+                    for i in 0..json.len().min(6) {
+                        let v = if json.is_null(i) { "NULL".to_string() } else { json.value(i).to_string() };
+                        eprintln!("{label} row {i}: {v}");
+                    }
+                }
+                Ok(Err(e)) => eprintln!("{label}: ERR {e}"),
+                Err(p) => eprintln!(
+                    "{label}: PANIC {}",
+                    p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
+                ),
             }
-            Err(e) => eprintln!("unshred_variant: ERR {e}"),
+        };
+        guarded("variant_to_json positional", &|| parquet::variant::variant_to_json(col));
+        if va.typed_value_field().is_none() {
+            if let Some(reordered) = by_name(col) {
+                guarded("variant_to_json by-name", &|| parquet::variant::variant_to_json(&reordered));
+            }
+        }
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parquet::variant::unshred_variant(&va))) {
+            Ok(Ok(unshredded)) => {
+                let inner: ArrayRef = Arc::new(unshredded.into_inner());
+                let reordered = by_name(&inner).unwrap_or(inner);
+                guarded("unshred+to_json", &|| parquet::variant::variant_to_json(&reordered));
+            }
+            Ok(Err(e)) => eprintln!("unshred_variant: ERR {e}"),
+            Err(_) => eprintln!("unshred_variant: PANIC"),
         }
         for ty in ["Int64", "Utf8"] {
             match variant_get(&schema, &path, ty).evaluate(&batch) {
