@@ -185,3 +185,19 @@ index 674ae2b8d..3cbaa413e 100644
  }
  
  #[cfg(test)]
+diff --git a/parquet/src/arrow/schema/extension.rs b/parquet/src/arrow/schema/extension.rs
+--- a/parquet/src/arrow/schema/extension.rs
++++ b/parquet/src/arrow/schema/extension.rs
+@@ -112,8 +112,11 @@ pub(crate) fn logical_type_for_struct(field: &Field) -> Option<LogicalType> {
+ pub(crate) fn logical_type_for_struct(field: &Field) -> Option<LogicalType> {
+     use parquet_variant_compute::VariantType;
+     if field.has_valid_extension_type::<VariantType>() {
++        // OpenSearch patch: the Parquet spec requires the version in the VARIANT annotation and
++        // Spark 4.1 rejects `VARIANT` without `specification_version == 1`
++        // (PARQUET_TYPE_NOT_RECOGNIZED). parquet-variant only produces v1 encoding.
+         Some(LogicalType::Variant {
+-            specification_version: None,
++            specification_version: Some(1),
+         })
+     } else {
+         None
