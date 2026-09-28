@@ -32,3 +32,7 @@ opensearch-parquet-format = { path = ".", features = ["test-utils"] }
 [[bench]]
 name = "merge_projection_bench"
 harness = false
+
+[[bench]]
+name = "variant_merge_bench"
+harness = false

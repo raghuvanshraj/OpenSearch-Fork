@@ -53,6 +53,7 @@ mod row_id_strategies;
 mod schema_drift;
 mod sort_reverse_row_id;
 mod streaming_at_scale;
+mod variant_mixed_schema;
 mod variant_poc3_smoke;
 mod variant_pruning;
 

@@ -252,7 +252,12 @@ fn create_stream_with_access_plan(
 
     let mut config_builder =
         FileScanConfigBuilder::new(config.store_url.clone(), Arc::new(parquet_source))
-            .with_file(partitioned_file);
+            .with_file(partitioned_file)
+            // D-18(a): a segment shredded differently from the table's canonical Variant type is
+            // reconstructed per segment instead of struct-cast (which would drop `typed_value`).
+            .with_expr_adapter(Some(Arc::new(
+                super::variant_adapter::VariantExprAdapterFactory,
+            )));
 
     if let Some(ref proj) = config.projection {
         // Empty projection (e.g. COUNT(*)) is honoured as "read no

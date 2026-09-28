@@ -146,8 +146,75 @@ pub async fn build_segments(
     // force_view_types does not recursively rewrite LIST children.
     let schema = crate::schema_coerce::transform_schema_to_view_recursive(schema.as_ref());
     let schema = crate::schema_coerce::coerce_inferred_schema(Arc::new(schema));
+    // `ParquetFormat::infer_schema` runs with `skip_metadata = true` and clears every top-level
+    // field's metadata before merging, which drops `ARROW:extension:name` (V-27) and makes
+    // `variant_get` refuse a Variant column at plan time. It also unions the shredded
+    // `typed_value` shapes of all segments into one struct, which is not a layout any segment
+    // has. D-18(a): the table exposes every Variant column as the canonical
+    // `Struct<metadata, value>` and each segment is reconstructed to it at read time
+    // (`variant_adapter.rs`); the footers keep their own layout for pruning.
+    let schema = canonicalize_variant_fields(schema, &segments);
 
     Ok((segments, schema))
+}
+
+/// Canonical Variant column type: `Struct<metadata: Binary, value: Binary?>` plus the extension
+/// tag. `Binary` rather than `BinaryView` to match `coerce_inferred_schema`.
+fn canonical_variant_field(
+    name: &str,
+    nullable: bool,
+    tagged: &arrow::datatypes::Field,
+) -> arrow::datatypes::Field {
+    use arrow::datatypes::{DataType, Field, Fields};
+    let md = tagged
+        .metadata()
+        .iter()
+        .filter(|(k, _)| k.starts_with("ARROW:extension:"))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    Field::new(
+        name,
+        DataType::Struct(Fields::from(vec![
+            Field::new("metadata", DataType::Binary, false),
+            Field::new("value", DataType::Binary, true),
+        ])),
+        nullable,
+    )
+    .with_metadata(md)
+}
+
+/// Replace every top-level field that any segment footer tags as `arrow.parquet.variant` with
+/// the canonical Variant type. Fields no footer tags are returned unchanged.
+fn canonicalize_variant_fields(
+    schema: arrow::datatypes::SchemaRef,
+    segments: &[SegmentFileInfo],
+) -> arrow::datatypes::SchemaRef {
+    use arrow::datatypes::{Field, Schema};
+    use parquet::variant::VariantType;
+    let mut changed = false;
+    let fields: Vec<Field> = schema
+        .fields()
+        .iter()
+        .map(|f| {
+            let tagged = segments.iter().find_map(|s| {
+                s.arrow_schema
+                    .field_with_name(f.name())
+                    .ok()
+                    .filter(|ff| ff.try_extension_type::<VariantType>().is_ok())
+            });
+            match tagged {
+                Some(ff) => {
+                    changed = true;
+                    canonical_variant_field(f.name(), f.is_nullable(), ff)
+                }
+                None => f.as_ref().clone(),
+            }
+        })
+        .collect();
+    if !changed {
+        return schema;
+    }
+    Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone()))
 }
 
 /// Read the writer generation out of a parquet footer's key-value metadata and panic if

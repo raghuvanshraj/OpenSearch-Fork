@@ -71,6 +71,7 @@ pub mod segment_info;
 pub mod stream;
 pub mod substrait_to_tree;
 pub mod table_provider;
+pub mod variant_adapter;
 
 #[cfg(test)]
 mod tests_e2e;
